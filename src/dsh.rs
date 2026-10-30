@@ -828,6 +828,12 @@ mod tests {
         fs::set_permissions(path, fs::Permissions::from_mode(mode)).expect("chmod");
     }
 
+    /// Canonical form of a path (macOS /var -> /private/var, Windows verbatim
+    /// prefixes and 8.3 short names, symlinked temp dirs).
+    fn canonical(path: &Path) -> PathBuf {
+        fs::canonicalize(path).unwrap_or_else(|error| panic!("canonicalize {}: {error}", path.display()))
+    }
+
     fn tags(pairs: &[(&str, &str)]) -> DistTags {
         pairs
             .iter()
@@ -912,7 +918,7 @@ mod tests {
         let resolved_dir = resolve_install_path(&package_root).expect("package dir");
         assert_eq!(resolved_dir.0, package_root);
         let resolved_js = resolve_install_path(&package_root.join("lib/bin.js")).expect("bin.js");
-        assert_eq!(resolved_js.1, package_root.join("lib/bin.js"));
+        assert_eq!(resolved_js.1, canonical(&package_root.join("lib/bin.js")));
     }
 
     #[cfg(unix)]
@@ -926,8 +932,8 @@ mod tests {
         fs::create_dir_all(shim.parent().expect("parent")).expect("mkdir");
         std::os::unix::fs::symlink(package_root.join("lib/bin.js"), &shim).expect("symlink");
         let (root, bin_js) = resolve_install_path(&shim).expect("resolved");
-        assert_eq!(root, package_root);
-        assert_eq!(bin_js, package_root.join("lib/bin.js"));
+        assert_eq!(root, canonical(&package_root));
+        assert_eq!(bin_js, canonical(&package_root.join("lib/bin.js")));
     }
 
     #[test]
@@ -983,8 +989,8 @@ mod tests {
         };
         let install = DshInstall::discover(&config).expect("discover");
         assert_eq!(install.version, "9.9.9-test");
-        assert_eq!(install.package_root, package_root);
-        assert_eq!(install.bin_js, package_root.join("lib/bin.js"));
+        assert_eq!(install.package_root, canonical(&package_root));
+        assert_eq!(install.bin_js, canonical(&package_root.join("lib/bin.js")));
         assert_eq!(install.node, node);
         assert_eq!(install.npm, npm);
     }
@@ -1046,6 +1052,7 @@ mod tests {
             ..Config::default()
         };
         let install = DshInstall::discover(&config).expect("discover");
+        let prefix = canonical(&prefix);
         assert_eq!(install.node, prefix.join("bin/node"));
         assert_eq!(install.npm, prefix.join("bin/npm"));
     }

@@ -1,4 +1,5 @@
 //! Hermetic controller tests for the channel/update flow.
+#![cfg(unix)]
 //!
 //! A tiny in-process HTTP server stands in for the npm registry, and a fake
 //! npm script copies a prepared package.json, so the whole channel/update path
