@@ -131,10 +131,15 @@ checkout:
 packaging/install.sh --binary target/release/dsh-tray
 ```
 
-It installs the binary to `$HOME/.local/bin`, the icon to
-`$HOME/.local/share/icons/hicolor/256x256/apps` and the desktop entry to
-`$HOME/.local/share/applications`; `BINDIR`, `ICONDIR` and `APPDIR` override the
-locations.
+The default install root is `~/.local/dsh-tray` and is self-contained: the
+binary, an `icon.png` copy, a generated `dsh-tray.desktop` with absolute
+`Exec`/`Icon` paths, and a `backups/` directory. The entry and icon are also
+registered in `~/.local/share/applications` and
+`~/.local/share/icons/hicolor/256x256/apps` unless `--no-desktop` is passed.
+`--home DIR` targets another user's home, `--prefix DIR` sets a custom root, and
+`APPDIR` / `ICONDIR` override the XDG directories. Every replaced file is backed
+up under `<install-root>/backups/<timestamp>/` before it is overwritten, so the
+desktop icon always has a backup inside the install root.
 
 ### macOS
 

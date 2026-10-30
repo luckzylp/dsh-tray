@@ -114,7 +114,8 @@ Linux:
 
 ```bash
 tar xzf dsh-tray-linux-x86_64.tar.gz
-install -Dm755 dsh-tray "$HOME/.local/bin/dsh-tray"
+install -Dm755 dsh-tray "$HOME/.local/dsh-tray/dsh-tray"
+# optional desktop entry/icon + backups: use packaging/install.sh from a checkout
 ```
 
 macOS:
@@ -149,17 +150,34 @@ cargo install --path . --locked
 
 ### Desktop integration on Linux
 
-From a source checkout, `packaging/install.sh` installs the binary, the icon and
-a desktop entry for the current user (no `sudo`):
+From a source checkout, `packaging/install.sh` installs everything for one user
+without `sudo`:
 
 ```bash
 packaging/install.sh --binary target/release/dsh-tray
 ```
 
-It installs to `~/.local/bin`, `~/.local/share/icons/hicolor/256x256/apps` and
-`~/.local/share/applications`; override those with `BINDIR`, `ICONDIR` and
-`APPDIR`. For manual setups, `packaging/dsh-tray.desktop` is a ready-made entry
-that expects `dsh-tray` on `PATH`.
+Defaults to a self-contained directory, `~/.local/dsh-tray` (for example
+`/home/Kevin/.local/dsh-tray`), containing:
+
+```text
+~/.local/dsh-tray/
+  dsh-tray              executable
+  icon.png              desktop icon copy
+  dsh-tray.desktop      launcher entry with absolute paths
+  backups/<timestamp>/  files replaced by the install
+```
+
+The entry and icon are also registered in `~/.local/share/applications` and
+`~/.local/share/icons/hicolor/256x256/apps`; pass `--no-desktop` to keep the
+install root only. Use `--home DIR` to install for another user's home,
+`--prefix DIR` for a custom root, and `APPDIR` / `ICONDIR` to override the XDG
+directories. Every replaced file (binary, icon, desktop entry, including the
+XDG copies) is backed up under `<install-root>/backups/<timestamp>/`, so the
+desktop icon always has a backup inside that root. The generated launcher uses
+absolute `Exec`/`Icon` paths, so the directory does not need to be on `PATH`.
+For manual setups, `packaging/dsh-tray.desktop` is a ready-made entry that
+expects `dsh-tray` on `PATH`.
 
 ## Quick start
 
