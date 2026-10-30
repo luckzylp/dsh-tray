@@ -62,7 +62,7 @@ impl fmt::Display for Channel {
 pub type DistTags = BTreeMap<String, String>;
 
 /// Version published under `channel`, when known.
-pub fn tag_version<'a>(tags: &'a DistTags, channel: Channel) -> Option<&'a str> {
+pub fn tag_version(tags: &DistTags, channel: Channel) -> Option<&str> {
     tags.get(channel.tag()).map(String::as_str)
 }
 

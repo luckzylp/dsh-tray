@@ -24,7 +24,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 open = "5.4"
 fs4 = "1.1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
-ctrlc = "3.4"
+ctrlc = { version = "3.4", features = ["termination"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

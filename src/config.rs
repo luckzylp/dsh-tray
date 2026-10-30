@@ -57,7 +57,10 @@ pub struct Config {
     pub port: u16,
     /// Bind address passed to `dsh web`.
     pub host: String,
-    /// Open the browser as soon as a start initiated from the tray becomes ready.
+    /// Open the browser when dsh is auto-started at tray launch.
+    ///
+    /// A login-item launch (`--hidden`) suppresses this; the Open Web menu
+    /// item always opens the browser explicitly.
     pub open_browser_when_ready: bool,
     /// Start dsh when the tray starts.
     pub start_dsh_on_launch: bool,
@@ -137,10 +140,18 @@ impl Config {
     pub fn normalize(&mut self) -> Option<String> {
         let mut warnings = Vec::new();
         if self.host.parse::<IpAddr>().is_err() {
-            warnings.push(format!("invalid host {:?} (needs an IP literal); using 127.0.0.1", self.host));
+            warnings.push(format!(
+                "invalid host {:?} (needs an IP literal); using 127.0.0.1",
+                self.host
+            ));
             self.host = "127.0.0.1".to_string();
         }
-        if self.host.parse::<IpAddr>().map(|ip| ip.is_unspecified()).unwrap_or(false) {
+        if self
+            .host
+            .parse::<IpAddr>()
+            .map(|ip| ip.is_unspecified())
+            .unwrap_or(false)
+        {
             warnings.push("wildcard bind addresses are not supported by dsh; using 127.0.0.1".to_string());
             self.host = "127.0.0.1".to_string();
         }
@@ -170,8 +181,7 @@ impl Config {
     /// Persist atomically (write temp file, then rename).
     pub fn save(&self, path: &Path) -> Result<()> {
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("create config directory {}", parent.display()))?;
+            fs::create_dir_all(parent).with_context(|| format!("create config directory {}", parent.display()))?;
         }
         let json = serde_json::to_string_pretty(self).context("serialize config")?;
         write_atomic(path, json.as_bytes())
@@ -188,8 +198,10 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
         .unwrap_or("dsh-tray.tmp");
     let tmp = parent.join(format!(".{file_name}.{}.tmp", std::process::id()));
     {
-        let mut file = fs::File::create(&tmp)
-            .with_context(|| format!("create temporary file {}", tmp.display()))?;
+        let mut file = fs::File::create(&tmp).with_context(|| format!("create temporary file {}", tmp.display()))?;
+        // Files written here can contain the authenticated dsh URL token
+        // (runtime.json), so keep them private even before the rename.
+        restrict_file(&file);
         file.write_all(bytes)
             .with_context(|| format!("write temporary file {}", tmp.display()))?;
         file.sync_all().ok();
@@ -201,6 +213,17 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     }
     fs::rename(&tmp, path).with_context(|| format!("replace {}", path.display()))?;
     Ok(())
+}
+
+/// Restrict a file to the current user (0600) on Unix; a no-op elsewhere.
+pub(crate) fn restrict_file(file: &fs::File) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let _ = file.set_permissions(fs::Permissions::from_mode(0o600));
+    }
+    #[cfg(not(unix))]
+    let _ = file;
 }
 
 /// Filesystem locations used by the tray.
@@ -227,21 +250,27 @@ impl AppPaths {
             .or_else(|| project.as_ref().map(|dirs| dirs.data_dir().to_path_buf()))
             .unwrap_or_else(|| config_dir.clone());
         let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from(crate::APP_NAME));
-        Self { config_dir, data_dir, exe }
+        Self {
+            config_dir,
+            data_dir,
+            exe,
+        }
     }
 
     /// Explicit directories (tests, portable mode).
     pub fn with_dirs(config_dir: PathBuf, data_dir: PathBuf) -> Self {
         let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from(crate::APP_NAME));
-        Self { config_dir, data_dir, exe }
+        Self {
+            config_dir,
+            data_dir,
+            exe,
+        }
     }
 
     /// Create all directories the app writes into.
     pub fn ensure(&self) -> Result<()> {
-        fs::create_dir_all(&self.config_dir)
-            .with_context(|| format!("create {}", self.config_dir.display()))?;
-        fs::create_dir_all(self.log_dir())
-            .with_context(|| format!("create {}", self.log_dir().display()))?;
+        fs::create_dir_all(&self.config_dir).with_context(|| format!("create {}", self.config_dir.display()))?;
+        fs::create_dir_all(self.log_dir()).with_context(|| format!("create {}", self.log_dir().display()))?;
         fs::create_dir_all(self.tray_temp_dir())
             .with_context(|| format!("create {}", self.tray_temp_dir().display()))?;
         Ok(())
@@ -278,7 +307,9 @@ impl AppPaths {
 }
 
 fn env_path(name: &str) -> Option<PathBuf> {
-    std::env::var_os(name).filter(|value| !value.is_empty()).map(PathBuf::from)
+    std::env::var_os(name)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
 }
 
 fn fallback_dir() -> PathBuf {
@@ -304,10 +335,12 @@ mod tests {
     fn roundtrip_through_json() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.json");
-        let mut config = Config::default();
-        config.channel = Channel::Alpha;
-        config.port = 41029;
-        config.language = Language::Zh;
+        let config = Config {
+            channel: Channel::Alpha,
+            port: 41029,
+            language: Language::Zh,
+            ..Config::default()
+        };
         config.save(&path).unwrap();
         let (loaded, warning) = Config::load(&path);
         assert!(warning.is_none());
@@ -347,15 +380,28 @@ mod tests {
 
     #[test]
     fn normalize_repairs_bad_values() {
-        let mut config = Config::default();
-        config.host = "0.0.0.0".into();
-        config.update_check_hours = 0;
-        config.registry = Some("https://registry.npmjs.org/".into());
+        let mut config = Config {
+            host: "0.0.0.0".into(),
+            update_check_hours: 0,
+            registry: Some("https://registry.npmjs.org/".into()),
+            ..Config::default()
+        };
         let warning = config.normalize().expect("warning");
         assert!(warning.contains("wildcard"));
         assert_eq!(config.host, "127.0.0.1");
         assert_eq!(config.update_check_hours, 1);
         assert_eq!(config.registry.as_deref(), Some("https://registry.npmjs.org"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn saved_config_is_private() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        Config::default().save(&path).unwrap();
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "config/runtime files must not be world-readable");
     }
 
     #[test]

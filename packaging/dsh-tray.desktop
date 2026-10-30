@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=DSH Tray
+Comment=System tray controller for DeepSeek Harness
+Exec=dsh-tray
+Icon=dsh-tray
+Terminal=false
+Categories=Utility;Development;
+StartupNotify=false

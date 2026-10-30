@@ -26,8 +26,7 @@ impl Logger {
     /// Open (or create) `path`, rotating it first when it exceeds 2 MiB.
     pub fn open(path: &Path) -> Result<Self> {
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("create log directory {}", parent.display()))?;
+            fs::create_dir_all(parent).with_context(|| format!("create log directory {}", parent.display()))?;
         }
         rotate(path);
         let file = OpenOptions::new()
@@ -35,6 +34,8 @@ impl Logger {
             .append(true)
             .open(path)
             .with_context(|| format!("open log file {}", path.display()))?;
+        // The web log can contain the authenticated dsh URL token.
+        crate::config::restrict_file(&file);
         Ok(Self {
             file: Mutex::new(file),
             path: path.to_path_buf(),
@@ -76,7 +77,9 @@ fn rotate(path: &Path) {
     }
     let backup = path.with_file_name(format!(
         "{}.1",
-        path.file_name().and_then(|name| name.to_str()).unwrap_or("dsh-tray.log")
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("dsh-tray.log")
     ));
     let _ = fs::remove_file(&backup);
     let _ = fs::rename(path, &backup);

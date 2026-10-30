@@ -24,7 +24,7 @@ menu (tao + tray-icon/muda, GTK/AppIndicator on Linux).
 
 ## Process model
 
-```
+```text
 main thread                     controller thread                 workers
 -----------                     -----------------                 -------
 tao event loop                  owns Config + Snapshot            network / npm / wait
@@ -69,7 +69,7 @@ tao event loop                  owns Config + Snapshot            network / npm 
 
 ## Public interfaces (frozen for parallel work)
 
-```rust
+```rust,ignore
 // channel.rs
 pub enum Channel { Latest, Next, Alpha }
 impl Channel {

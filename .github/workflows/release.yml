@@ -1,0 +1,242 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
+jobs:
+  build:
+    name: build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-latest
+            platform: linux
+            arch: x86_64
+            artifact: dsh-tray-linux-x86_64.tar.gz
+          - name: linux-aarch64
+            os: ubuntu-24.04-arm
+            platform: linux
+            arch: aarch64
+            artifact: dsh-tray-linux-aarch64.tar.gz
+          - name: windows-x86_64
+            os: windows-latest
+            platform: windows
+            arch: x86_64
+            artifact: dsh-tray-windows-x86_64.zip
+          - name: macos-x86_64
+            os: macos-13
+            platform: macos
+            arch: x86_64
+            artifact: dsh-tray-macos-x86_64.tar.gz
+          - name: macos-aarch64
+            os: macos-14
+            platform: macos
+            arch: aarch64
+            artifact: dsh-tray-macos-aarch64.tar.gz
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        shell: bash
+        run: cargo build --release --locked
+
+      - name: Read package version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
+          if [ -z "$version" ]; then
+            echo "could not read the package version from Cargo.toml" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Stage package (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf package artifacts
+          mkdir -p package artifacts
+          cp target/release/dsh-tray package/dsh-tray
+          cp LICENSE README.md README.zh-CN.md package/
+          tar -czf "artifacts/${{ matrix.artifact }}" -C package dsh-tray LICENSE README.md README.zh-CN.md
+
+      - name: Build .app bundle (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version='${{ steps.version.outputs.version }}'
+          app="dist/DSH Tray.app"
+          rm -rf dist
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          cp target/release/dsh-tray "$app/Contents/MacOS/dsh-tray"
+          chmod 0755 "$app/Contents/MacOS/dsh-tray"
+          scripts/make-macos-icns.sh assets/app/icon.png "$app/Contents/Resources/AppIcon.icns"
+          cat > "$app/Contents/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleIdentifier</key>
+            <string>ai.deepseek.dsh-tray</string>
+            <key>CFBundleName</key>
+            <string>DSH Tray</string>
+            <key>CFBundleDisplayName</key>
+            <string>DSH Tray</string>
+            <key>CFBundleExecutable</key>
+            <string>dsh-tray</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleShortVersionString</key>
+            <string>${version}</string>
+            <key>CFBundleVersion</key>
+            <string>${version}</string>
+            <key>CFBundleIconFile</key>
+            <string>AppIcon</string>
+            <key>LSUIElement</key>
+            <true/>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+          </dict>
+          </plist>
+          EOF
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app/Contents/Info.plist"
+          tar -czf "artifacts/DSH-Tray-macos-${{ matrix.arch }}.app.tar.gz" -C dist "DSH Tray.app"
+
+      - name: Stage package (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf package artifacts
+          mkdir -p package artifacts
+          cp target/release/dsh-tray.exe package/dsh-tray.exe
+          cp LICENSE README.md README.zh-CN.md package/
+          python - package "artifacts/${{ matrix.artifact }}" <<'PY'
+          import os
+          import sys
+          import zipfile
+
+          source, archive = sys.argv[1], sys.argv[2]
+          with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zip_file:
+              for name in sorted(os.listdir(source)):
+                  zip_file.write(os.path.join(source, name), name)
+          PY
+
+      - name: Generate checksums
+        shell: bash
+        env:
+          CHECKSUM_FILE: checksums-${{ matrix.name }}.txt
+        run: |
+          set -euo pipefail
+          cd artifacts
+          files="$(find . -maxdepth 1 -type f ! -name 'checksums-*' -print | sed 's|^\./||' | sort)"
+          if [ -z "$files" ]; then
+            echo "no artifacts to checksum" >&2
+            exit 1
+          fi
+          if command -v shasum >/dev/null 2>&1; then
+            # shellcheck disable=SC2086
+            shasum -a 256 $files > "$CHECKSUM_FILE"
+          elif command -v sha256sum >/dev/null 2>&1; then
+            # shellcheck disable=SC2086
+            sha256sum $files > "$CHECKSUM_FILE"
+          else
+            py=python3
+            command -v "$py" >/dev/null 2>&1 || py=python
+            "$py" - <<'PY'
+          import hashlib
+          import os
+
+          out = os.environ["CHECKSUM_FILE"]
+          lines = []
+          for name in sorted(os.listdir(".")):
+              if not os.path.isfile(name) or name.startswith("checksums-"):
+                  continue
+              digest = hashlib.sha256()
+              with open(name, "rb") as handle:
+                  for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              lines.append(f"{digest.hexdigest()}  {name}")
+          if not lines:
+              raise SystemExit("no artifacts to checksum")
+          with open(out, "w", encoding="utf-8") as handle:
+              handle.write("\n".join(lines) + "\n")
+          PY
+          fi
+          cat "$CHECKSUM_FILE"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Merge checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd artifacts
+          ls -l
+          cat checksums-*.txt > checksums.txt
+          rm -f checksums-*.txt
+          sha256sum -c checksums.txt
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          files: artifacts/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true

@@ -7,8 +7,11 @@
 # local tooling / caches
 /.cargo-home/
 /.dsh-tray-home/
+/.runtime-test/
+/.verify/
 *.log
 
 # OS noise
 .DS_Store
 Thumbs.db
+.team/
