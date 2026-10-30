@@ -71,7 +71,7 @@ tao 事件循环                    持有 Config + Snapshot            网络 /
 
 | 组件 | 要求 |
 | --- | --- |
-| Rust（从源码构建） | 1.85 或更高版本；edition 2021 |
+| Rust（从源码构建） | 1.85 或更高版本；edition 2024 |
 | Node.js 与 npm | 在 `PATH` 中，或在配置里设置 `node_path` / `npm_path` |
 | `dsh` 命令行 | 通过 npm 全局安装：`@deepseek-ai/dsh` |
 | Linux 运行时 | GTK3 以及 StatusNotifier/AppIndicator 宿主（见下文） |

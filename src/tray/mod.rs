@@ -13,7 +13,7 @@
 
 pub mod menu_spec;
 
-use anyhow::{anyhow, Context as _};
+use anyhow::{Context as _, anyhow};
 use tray_icon::menu::{CheckMenuItem, IsMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem, Submenu};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
@@ -69,11 +69,7 @@ pub fn icon_kind(snapshot: &Snapshot) -> IconKind {
                 | Notice::AutostartFailed
         )
     );
-    if failed {
-        IconKind::Error
-    } else {
-        IconKind::Idle
-    }
+    if failed { IconKind::Error } else { IconKind::Idle }
 }
 
 /// Owns the tray icon and rebuilds its menu on every snapshot.

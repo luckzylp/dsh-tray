@@ -25,10 +25,10 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use semver::Version;
 
-use crate::channel::{tag_version, Channel, DistTags};
+use crate::channel::{Channel, DistTags, tag_version};
 use crate::config::Config;
 
 /// Relative path of the CLI entry point inside the npm package.

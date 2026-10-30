@@ -250,17 +250,21 @@ fn check_json_without_node_or_npm_still_prints_the_report_and_exits_1() {
     assert_eq!(output.status.code(), Some(1), "stderr: {}", stderr(&output));
     let report = json(&output);
     assert_eq!(report["dsh"]["found"], false);
-    assert!(report["dsh"]["error"]
-        .as_str()
-        .unwrap_or_default()
-        .contains("dsh not found"));
+    assert!(
+        report["dsh"]["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("dsh not found")
+    );
     // npm may still be found via a known system Node installation even when
     // PATH is empty; if it is absent, the report must explain that clearly.
     if report["npm"]["found"] == serde_json::Value::Bool(false) {
-        assert!(report["npm"]["error"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("npm not found"));
+        assert!(
+            report["npm"]["error"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("npm not found")
+        );
     }
     assert_eq!(report["installed_version"], serde_json::Value::Null);
     assert_eq!(report["channel_target"], serde_json::Value::Null);

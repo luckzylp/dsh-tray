@@ -6,7 +6,7 @@
 //! touches the platform UI.
 
 use crate::app::{ServiceState, Snapshot};
-use crate::channel::{tag_version, Channel};
+use crate::channel::{Channel, tag_version};
 use crate::config::Language;
 use crate::i18n::{self, Key};
 

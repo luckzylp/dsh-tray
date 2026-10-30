@@ -78,7 +78,7 @@ process model.
 
 | Component | Requirement |
 | --- | --- |
-| Rust (build from source) | 1.85 or newer; edition 2021 |
+| Rust (build from source) | 1.85 or newer; edition 2024 |
 | Node.js and npm | on `PATH`, or set `node_path` / `npm_path` in the config |
 | `dsh` CLI | installed globally from npm: `@deepseek-ai/dsh` |
 | Linux runtime | GTK3 and a StatusNotifier/AppIndicator host (see below) |

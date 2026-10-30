@@ -10,8 +10,8 @@ use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use anyhow::{bail, Context, Result};
-use serde_json::{json, Value};
+use anyhow::{Context, Result, bail};
+use serde_json::{Value, json};
 
 use crate::app;
 use crate::autostart;

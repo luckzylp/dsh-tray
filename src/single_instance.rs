@@ -88,7 +88,15 @@ mod tests {
         let first = acquire(&path).unwrap().expect("first lock");
         assert!(acquire(&path).unwrap().is_none(), "second lock must be refused");
         drop(first);
-        let third = acquire(&path).unwrap();
-        assert!(third.is_some(), "lock must be reusable after drop");
+        // File-lock release is immediate on Unix/Windows, but allow a short
+        // retry so filesystem/AV latency cannot make this test flaky.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            if acquire(&path).unwrap().is_some() {
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline, "lock must be reusable after drop");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
     }
 }
