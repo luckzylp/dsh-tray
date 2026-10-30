@@ -17,7 +17,7 @@ use anyhow::{anyhow, Context as _};
 use tray_icon::menu::{CheckMenuItem, IsMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem, Submenu};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
-use crate::app::{Command, Snapshot};
+use crate::app::{Command, Notice, Snapshot};
 use crate::channel::Channel;
 use crate::config::AppPaths;
 use crate::i18n;
@@ -37,9 +37,48 @@ pub enum UserEvent {
     Shutdown,
 }
 
+/// Which whale icon the tray shows for the current state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IconKind {
+    /// Nothing is running (or starting/stopping): neutral gray whale.
+    Idle,
+    /// The dsh web service is running: green whale.
+    Running,
+    /// The last operation failed or the service crashed: red whale.
+    Error,
+}
+
+/// Map a snapshot to the coloured status icon.
+///
+/// A running service wins so a healthy instance stays green even when an
+/// unrelated notice is present; otherwise lifecycle/update/config failures
+/// show the red whale, and everything else is the neutral gray one.
+pub fn icon_kind(snapshot: &Snapshot) -> IconKind {
+    if snapshot.state.is_running() {
+        return IconKind::Running;
+    }
+    let failed = matches!(
+        snapshot.notice,
+        Some(
+            Notice::StartFailed
+                | Notice::StopFailed
+                | Notice::StartupTimedOut
+                | Notice::UpdateFailed
+                | Notice::ConfigFailed
+                | Notice::AutostartFailed
+        )
+    );
+    if failed {
+        IconKind::Error
+    } else {
+        IconKind::Idle
+    }
+}
+
 /// Owns the tray icon and rebuilds its menu on every snapshot.
 pub struct TrayUi {
     icon: TrayIcon,
+    icon_kind: IconKind,
 }
 
 impl TrayUi {
@@ -50,18 +89,20 @@ impl TrayUi {
     /// panicking when the platform has no tray host or the icon cannot be
     /// rendered.
     pub fn new(snapshot: &Snapshot, paths: &AppPaths) -> anyhow::Result<Self> {
-        let icon = load_icon().context("load embedded tray icon")?;
+        let icon_kind = icon_kind(snapshot);
+        let icon = load_icon(icon_kind).context("load embedded tray icon")?;
         let menu = render_menu(&menu_spec::build(snapshot)).context("build tray menu")?;
         let tooltip = tooltip_text(snapshot);
 
-        let builder = TrayIconBuilder::new()
+        let icon = TrayIconBuilder::new()
             .with_menu(Box::new(menu))
             .with_tooltip(tooltip)
-            .with_temp_dir_path(paths.tray_temp_dir());
-        let builder = with_icon(builder, icon);
-
-        let icon = builder.build().context("create tray icon")?;
-        Ok(Self { icon })
+            .with_temp_dir_path(paths.tray_temp_dir())
+            .with_icon(icon)
+            .build()
+            .context("create tray icon")?;
+        logging::info(format!("tray icon: {icon_kind:?}"));
+        Ok(Self { icon, icon_kind })
     }
 
     /// Replace the tray menu and tooltip with the ones derived from [`snapshot`].
@@ -79,6 +120,22 @@ impl TrayUi {
 
         if let Err(error) = self.icon.set_tooltip(Some(tooltip_text(snapshot))) {
             logging::warn(format!("could not update tray tooltip: {error}"));
+        }
+
+        // Swapping the icon is cheap but visible; only do it when the state
+        // class actually changes (the controller emits frequent snapshots).
+        let icon_kind = icon_kind(snapshot);
+        if icon_kind != self.icon_kind {
+            match load_icon(icon_kind) {
+                Ok(icon) => match self.icon.set_icon(Some(icon)) {
+                    Ok(()) => {
+                        self.icon_kind = icon_kind;
+                        logging::info(format!("tray icon: {icon_kind:?}"));
+                    }
+                    Err(error) => logging::warn(format!("could not update tray icon: {error}")),
+                },
+                Err(error) => logging::warn(format!("could not load tray icon: {error:#}")),
+            }
         }
     }
 }
@@ -110,20 +167,14 @@ fn tooltip_text(snapshot: &Snapshot) -> String {
     i18n::tooltip(snapshot.lang, &snapshot.state)
 }
 
-/// Decode the embedded icon; the platform build chooses the right asset.
-#[cfg(target_os = "macos")]
-fn load_icon() -> anyhow::Result<Icon> {
-    // A template image is recoloured by macOS to match the menu bar.
-    decode_icon(include_bytes!("../../assets/icons/tray-template@2x.png"))
-        .or_else(|_| decode_icon(include_bytes!("../../assets/icons/tray-template.png")))
-}
-
-/// Decode the embedded icon; the platform build chooses the right asset.
-#[cfg(not(target_os = "macos"))]
-fn load_icon() -> anyhow::Result<Icon> {
-    // Prefer the 2x asset (crisper on HiDPI panels), fall back to the 1x one.
-    decode_icon(include_bytes!("../../assets/icons/tray@2x.png"))
-        .or_else(|_| decode_icon(include_bytes!("../../assets/icons/tray.png")))
+/// Decode the embedded 64px asset for the requested state.
+fn load_icon(kind: IconKind) -> anyhow::Result<Icon> {
+    let bytes: &[u8] = match kind {
+        IconKind::Idle => &include_bytes!("../../assets/icons/tray-stopped@2x.png")[..],
+        IconKind::Running => &include_bytes!("../../assets/icons/tray-running@2x.png")[..],
+        IconKind::Error => &include_bytes!("../../assets/icons/tray-error@2x.png")[..],
+    };
+    decode_icon(bytes).with_context(|| format!("decode {kind:?} tray icon"))
 }
 
 fn decode_icon(bytes: &[u8]) -> anyhow::Result<Icon> {
@@ -132,16 +183,6 @@ fn decode_icon(bytes: &[u8]) -> anyhow::Result<Icon> {
     let (width, height) = rgba.dimensions();
     Icon::from_rgba(rgba.into_raw(), width, height)
         .map_err(|error| anyhow!("invalid {width}×{height} RGBA icon: {error}"))
-}
-
-#[cfg(target_os = "macos")]
-fn with_icon(builder: TrayIconBuilder, icon: Icon) -> TrayIconBuilder {
-    builder.with_icon_templated(icon)
-}
-
-#[cfg(not(target_os = "macos"))]
-fn with_icon(builder: TrayIconBuilder, icon: Icon) -> TrayIconBuilder {
-    builder.with_icon(icon)
 }
 
 /// Append an item to either a root [`Menu`] or a [`Submenu`].
@@ -311,10 +352,85 @@ mod tests {
     }
 
     #[test]
-    #[cfg(all(unix, not(target_os = "macos")))]
-    fn embedded_icon_decodes() {
-        // Decoding only touches CPU memory on these platforms; no GTK/AppKit.
-        let icon = load_icon().expect("embedded icon decodes");
-        drop(icon);
+    fn all_state_icons_decode() {
+        for kind in [IconKind::Idle, IconKind::Running, IconKind::Error] {
+            let icon = load_icon(kind).unwrap_or_else(|error| panic!("{kind:?}: {error:#}"));
+            drop(icon);
+        }
+    }
+
+    #[test]
+    fn state_icons_have_expected_colours() {
+        let assets = [
+            (
+                IconKind::Idle,
+                &include_bytes!("../../assets/icons/tray-stopped@2x.png")[..],
+                (138u8, 143, 152),
+            ),
+            (
+                IconKind::Running,
+                &include_bytes!("../../assets/icons/tray-running@2x.png")[..],
+                (34u8, 197, 94),
+            ),
+            (
+                IconKind::Error,
+                &include_bytes!("../../assets/icons/tray-error@2x.png")[..],
+                (239u8, 68, 68),
+            ),
+        ];
+        for (kind, bytes, expected) in assets {
+            let image = image::load_from_memory(bytes)
+                .unwrap_or_else(|error| panic!("{kind:?} does not decode: {error}"))
+                .into_rgba8();
+            let mut counts: std::collections::HashMap<(u8, u8, u8), usize> = std::collections::HashMap::new();
+            for pixel in image.pixels() {
+                if pixel[3] > 200 {
+                    *counts.entry((pixel[0], pixel[1], pixel[2])).or_insert(0) += 1;
+                }
+            }
+            let dominant = counts
+                .into_iter()
+                .max_by_key(|(_, count)| *count)
+                .map(|(colour, _)| colour)
+                .expect("opaque pixels");
+            assert_eq!(dominant, expected, "{kind:?} has the wrong colour");
+        }
+    }
+
+    #[test]
+    fn icon_kind_tracks_service_state_and_errors() {
+        let mut snapshot = snapshot();
+        assert_eq!(icon_kind(&snapshot), IconKind::Idle);
+
+        snapshot.state = ServiceState::Starting;
+        assert_eq!(icon_kind(&snapshot), IconKind::Idle, "starting is not green yet");
+
+        snapshot.state = ServiceState::Running {
+            pid: 1,
+            url: "http://127.0.0.1:3080/".into(),
+            managed: true,
+        };
+        assert_eq!(icon_kind(&snapshot), IconKind::Running);
+
+        // A running service stays green; a stale unrelated notice must not
+        // repaint it red.
+        snapshot.notice = Some(Notice::UpdateFailed);
+        assert_eq!(icon_kind(&snapshot), IconKind::Running);
+
+        snapshot.state = ServiceState::Stopped;
+        assert_eq!(icon_kind(&snapshot), IconKind::Error, "failed update is abnormal");
+
+        snapshot.notice = Some(Notice::CheckFailed);
+        assert_eq!(
+            icon_kind(&snapshot),
+            IconKind::Idle,
+            "a network/update-check failure is not a service failure"
+        );
+
+        snapshot.notice = Some(Notice::StartFailed);
+        assert_eq!(icon_kind(&snapshot), IconKind::Error, "crashed start is abnormal");
+
+        snapshot.notice = None;
+        assert_eq!(icon_kind(&snapshot), IconKind::Idle);
     }
 }

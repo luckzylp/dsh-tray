@@ -31,6 +31,9 @@ only UI is the tray menu (tao + tray-icon/muda, GTK/AppIndicator on Linux).
   it started and never blocks the menu while it works.
 - **Open the web UI** — the tray parses the authenticated URL printed by
   `dsh web` and opens it in your default browser, token included.
+- **State-coloured whale icon** — the tray icon is the DeepSeek whale: gray when
+  dsh is stopped, green while the web UI is running, and red after a failed
+  start/stop/update or an unexpected exit.
 - **Installed version at a glance** — the menu header shows the installed `dsh`
   version and the effective channel.
 - **Channel switching** — choose between the `latest`, `next` and `alpha` npm
@@ -473,6 +476,10 @@ tagged GitHub Release. See [docs/PACKAGING.md](docs/PACKAGING.md) for the
 artifact layout and the version-bump checklist.
 
 Icons:
+
+The tray icon is the DeepSeek whale, recoloured per state (gray = stopped,
+green = running, red = error). The official whale mask and application icon are
+committed under `assets/`; the state variants are generated from them:
 
 ```bash
 python3 scripts/gen-icons.py                # needs Pillow; regenerates committed assets

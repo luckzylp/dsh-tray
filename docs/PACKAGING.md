@@ -241,10 +241,14 @@ which is useful for portable packaging and tests.
 ## Icons
 
 - `scripts/gen-icons.py` regenerates the committed assets under `assets/`
-  (requires Pillow). Existing outputs: `assets/icons/tray.png`,
-  `assets/icons/tray@2x.png`, `assets/icons/tray-template.png`,
-  `assets/icons/tray-template@2x.png`, `assets/app/icon.png` and
-  `assets/app/icon.ico`.
+  (requires Pillow). The official DeepSeek whale sources are
+  `assets/icons/whale-base-32.png` (silhouette mask) and
+  `assets/app/icon-source.png` (application icon). Outputs:
+  `assets/icons/tray-{stopped,running,error}.png` and their `@2x` versions,
+  plus `assets/app/icon.png` and `assets/app/icon.ico`.
+- Tray state colours: gray = stopped/starting, green = running, red = failed
+  start/stop/update, startup timeout, config/autostart error or unexpected
+  child exit.
 - `scripts/make-macos-icns.sh` builds `build/AppIcon.icns` from
   `assets/app/icon.png` on macOS.
 

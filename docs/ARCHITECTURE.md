@@ -61,7 +61,7 @@ tao event loop                  owns Config + Snapshot            network / npm 
 | `src/app.rs` | controller: state machine, commands, snapshots, workers |
 | `src/i18n.rs` | `Lang` resolution (en/zh) and typed message keys |
 | `src/tray/menu_spec.rs` | pure menu model derived from a snapshot (unit-testable) |
-| `src/tray/mod.rs` | muda menu rendering, tray icon, id <-> command mapping |
+| `src/tray/mod.rs` | muda menu rendering, state-coloured whale tray icon (gray/green/red), id <-> command mapping |
 | `src/autostart.rs` | Windows Run key, macOS LaunchAgent, Linux XDG autostart |
 | `src/single_instance.rs` | exclusive lock file + second-launch handoff |
 | `src/cli.rs` | argument parsing, `--check`/`--smoke` diagnostics |

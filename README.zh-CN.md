@@ -31,6 +31,8 @@ DSH Tray 是一个原生、跨平台的系统托盘控制器，用于控制
   菜单。
 - **打开 Web 界面** —— 托盘解析 `dsh web` 打印出的带认证信息的 URL，并用默认浏览器
   打开它（包含 token）。
+- **状态色鲸鱼图标** —— 托盘图标使用 DeepSeek 鲸鱼：dsh 停止时为灰色，Web 界面运行中
+  为绿色，启动/停止/更新失败或异常退出后为红色。
 - **一眼看到已安装版本** —— 菜单标题栏显示已安装的 `dsh` 版本和当前生效的通道。
 - **切换通道** —— 无需离开托盘即可在 `latest`、`next` 和 `alpha` 三个 npm
   dist-tag 之间切换。
@@ -443,6 +445,9 @@ SHA-256 校验和，并把所有内容附加到带标签的 GitHub Release。产
 清单见 [docs/PACKAGING.md](docs/PACKAGING.md)。
 
 图标：
+
+托盘图标使用 DeepSeek 鲸鱼，并按状态重新着色（灰色 = 停止，绿色 = 运行中，红色 =
+异常）。官方鲸鱼蒙版和应用图标已提交在 `assets/` 下，状态变体由它们生成：
 
 ```bash
 python3 scripts/gen-icons.py                # 需要 Pillow；重新生成已提交的图标资源
