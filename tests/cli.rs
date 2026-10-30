@@ -204,8 +204,8 @@ fn check_json_is_hermetic_and_describes_the_fake_install() {
     let offline = report["dist_tags"]["error"].as_str().unwrap_or_default();
     assert!(offline.contains("DSH_TRAY_OFFLINE"), "{offline}");
     assert_eq!(
-        report["log_file"],
-        sandbox.data().join("logs/dsh-tray.log").display().to_string()
+        std::path::PathBuf::from(report["log_file"].as_str().expect("log_file string")),
+        sandbox.data().join("logs/dsh-tray.log")
     );
     // The report must be pure: no log file may be created by --check.
     assert!(!sandbox.data().join("logs/dsh-tray.log").exists());

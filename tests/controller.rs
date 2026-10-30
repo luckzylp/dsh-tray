@@ -5,6 +5,7 @@
 //! sleeps until it is signalled. Every test is hermetic: config/data dirs live
 //! in a tempdir, npm points at a script that always fails, and the registry
 //! points at a closed port so a background update check fails immediately.
+#![cfg(unix)]
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -185,7 +186,8 @@ impl Harness {
 }
 
 fn alive(pid: i32) -> bool {
-    Path::new(&format!("/proc/{pid}")).exists()
+    // Works on Linux and macOS; /proc does not exist on macOS.
+    unsafe { libc::kill(pid, 0) == 0 }
 }
 
 fn pid_of(snapshot: &Snapshot) -> u32 {
