@@ -45,10 +45,11 @@ sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev
 ### Release workflow
 
 The release workflow runs on a push of a `v*` tag and can also be triggered
-manually (`workflow_dispatch`; a manual run builds and uploads workflow
-artifacts but does not publish a GitHub Release, because `github.ref` is not a
-tag). Each `build` job reads the package version from `Cargo.toml` into a step
-output:
+manually (`workflow_dispatch`). A manual run publishes a GitHub Release too: it
+uses the optional `tag` input when supplied, otherwise it derives
+`v<Cargo.toml version>` from the checked-out commit (and rejects tags that do not
+start with `v`). Each `build` job reads the package version from `Cargo.toml`
+into a step output:
 
 ```bash
 version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
