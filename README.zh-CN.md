@@ -104,8 +104,9 @@ Linux：
 
 ```bash
 tar xzf dsh-tray-linux-x86_64.tar.gz
-install -Dm755 dsh-tray "$HOME/.local/dsh-tray/dsh-tray"
-# 可选：使用源码仓库中的 packaging/install.sh 安装桌面启动项/图标并生成备份
+install -Dm755 dsh-tray "$HOME/.local/dsh-tray/bin/dsh-tray"
+# 完整 assets/packaging 目录、桌面启动项和备份请使用源码仓库中的
+# packaging/install.sh
 ```
 
 macOS：
@@ -146,24 +147,39 @@ cargo install --path . --locked
 packaging/install.sh --binary target/release/dsh-tray
 ```
 
-默认安装到独立目录 `~/.local/dsh-tray`（例如 `/home/Kevin/.local/dsh-tray`）：
+默认安装到独立目录 `~/.local/dsh-tray`（例如 `/home/Kevin/.local/dsh-tray`），
+结构与仓库一致：
 
 ```text
 ~/.local/dsh-tray/
-  dsh-tray              可执行文件
-  icon.png              桌面图标副本
-  dsh-tray.desktop      使用绝对路径的启动项
-  backups/<时间戳>/     本次安装替换掉的旧文件备份
+├── assets
+│   ├── app
+│   │   ├── icon.ico
+│   │   ├── icon.png
+│   │   └── whale.svg
+│   └── icons
+│       ├── tray-error@2x.png
+│       ├── tray-error.png
+│       ├── tray-running@2x.png
+│       ├── tray-running.png
+│       ├── tray-stopped@2x.png
+│       ├── tray-stopped.png
+│       └── whale-base-32.png
+├── bin
+│   └── dsh-tray
+└── packaging
+    ├── dsh-tray.desktop
+    └── install.sh
 ```
 
-启动项和图标还会注册到 `~/.local/share/applications` 与
-`~/.local/share/icons/hicolor/256x256/apps`；加 `--no-desktop` 则只保留安装目录。
+`packaging/dsh-tray.desktop` 使用绝对 `Exec`/`Icon` 路径生成；
+`packaging/install.sh` 也会复制到该目录，方便从已安装的目录重新安装/升级：
+`~/.local/dsh-tray/packaging/install.sh --binary <新的 dsh-tray>`。默认还会把菜单
+项注册到 `~/.local/share/applications`；加 `--no-desktop` 则只保留安装目录。
 用 `--home DIR` 可为其他用户的主目录安装，`--prefix DIR` 自定义安装根目录，
-`APPDIR` / `ICONDIR` 可覆盖 XDG 目录。所有被替换的文件（可执行文件、图标、桌面
-启动项，包括 XDG 目录中的副本）都会备份到 `<安装根目录>/backups/<时间戳>/`，
-因此桌面图标在该目录下始终有备份。生成的启动项使用绝对 `Exec`/`Icon` 路径，
-无需把安装目录加入 `PATH`。手动安装时，`packaging/dsh-tray.desktop` 是一个现成的
-启动项，要求 `dsh-tray` 在 `PATH` 中。
+`APPDIR` 可覆盖 applications 目录。被替换的文件会备份到隐藏目录
+`~/.local/dsh-tray/.backups/<时间戳>/`，因此桌面图标/资源在该目录下始终有备份。
+启动项使用绝对路径，无需把安装目录加入 `PATH`。
 
 ## 快速开始
 

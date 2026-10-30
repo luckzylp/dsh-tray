@@ -1,10 +1,14 @@
 #!/bin/sh
-# Install dsh-tray for one user, self-contained under <home>/.local/dsh-tray.
+# Install dsh-tray for one user as a self-contained tree under
+# <home>/.local/dsh-tray:
 #
-# The install root holds the binary plus copies of the icon and desktop entry,
-# and keeps backups of every file this script replaces (including the desktop
-# entry/icon installed into the user's XDG directories) under
-# <install-root>/backups/<timestamp>/.
+#   bin/dsh-tray
+#   assets/app/{icon.ico,icon.png,whale.svg}
+#   assets/icons/{tray-*.png,whale-base-32.png}
+#   packaging/{dsh-tray.desktop,install.sh}
+#
+# The desktop entry in packaging/ is generated with absolute Exec/Icon paths.
+# Replaced files are backed up under <install-root>/.backups/<timestamp>/.
 #
 # Usage:
 #   packaging/install.sh [--binary PATH] [--prefix DIR] [--home DIR] [--no-desktop]
@@ -12,13 +16,13 @@
 # Defaults:
 #   --home    $HOME
 #   --prefix  <home>/.local/dsh-tray   (e.g. /home/Kevin/.local/dsh-tray)
-#   --binary  ./dsh-tray, falling back to target/release/dsh-tray
+#   --binary  ./dsh-tray, target/release/dsh-tray, or <prefix>/bin/dsh-tray
 #
 # Environment overrides:
 #   DSH_TRAY_PREFIX  install root (same as --prefix)
 #   DSH_TRAY_HOME    target user home (same as --home)
-#   APPDIR           XDG applications directory (default <home>/.local/share/applications)
-#   ICONDIR          icon-theme directory (default <home>/.local/share/icons/hicolor/256x256/apps)
+#   APPDIR           XDG applications directory for the menu entry
+#                    (default <home>/.local/share/applications)
 set -eu
 
 APP=dsh-tray
@@ -26,33 +30,43 @@ TARGET_HOME=${DSH_TRAY_HOME:-${HOME:?HOME is not set}}
 PREFIX=${DSH_TRAY_PREFIX:-}
 BINARY=
 INSTALL_DESKTOP=1
+HOME_EXPLICIT=0
+if [ -n "${DSH_TRAY_HOME:-}" ]; then
+    HOME_EXPLICIT=1
+fi
 
 usage() {
     cat <<'EOF'
 Usage: packaging/install.sh [OPTIONS]
 
-Installs dsh-tray for one user into a self-contained directory:
+Installs dsh-tray for one user as a self-contained tree:
 
   <home>/.local/dsh-tray/
-    dsh-tray              the executable
-    icon.png              application icon copy
-    dsh-tray.desktop      launcher entry (absolute Exec/Icon paths)
-    backups/<timestamp>/  previous files replaced by this install
+    bin/dsh-tray
+    assets/app/icon.ico
+    assets/app/icon.png
+    assets/app/whale.svg
+    assets/icons/tray-error.png       (and @2x)
+    assets/icons/tray-running.png     (and @2x)
+    assets/icons/tray-stopped.png     (and @2x)
+    assets/icons/whale-base-32.png
+    packaging/dsh-tray.desktop        (absolute Exec/Icon paths)
+    packaging/install.sh              (this installer, for reinstalls)
+    .backups/<timestamp>/             (hidden; replaced files only)
 
-The desktop entry and icon are also registered in the user's XDG directories
-unless --no-desktop is given.
+The generated desktop entry is also registered in the user's applications
+directory unless --no-desktop is given.
 
 Options:
   --home DIR       target user home (default: $HOME)
   --prefix DIR     install root (default: <home>/.local/dsh-tray)
-  --binary PATH    dsh-tray binary to install (default: ./dsh-tray or
-                   target/release/dsh-tray)
-  --no-desktop     only populate the install root; skip the XDG menu entry
-                   and icon-theme copies
+  --binary PATH    dsh-tray binary to install (default: ./dsh-tray,
+                   target/release/dsh-tray, or <root>/bin/dsh-tray)
+  --no-desktop     only populate the install tree; skip the XDG menu entry
   -h, --help       show this help
 
-Environment: DSH_TRAY_HOME, DSH_TRAY_PREFIX, APPDIR, ICONDIR.
-Replaced files are backed up under <install-root>/backups/<timestamp>/.
+Environment: DSH_TRAY_HOME, DSH_TRAY_PREFIX, APPDIR.
+Replaced files are backed up under <install-root>/.backups/<timestamp>/.
 EOF
 }
 
@@ -73,30 +87,30 @@ absolute_path() {
 
 quote_exec() {
     # Desktop Entry Exec quoting: escape \ " and $ inside a double-quoted argument.
-    escaped=$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\$/\\$/g')
-    printf '"%s"' "$escaped"
+    qe_escaped=$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\$/\\$/g')
+    printf '"%s"' "$qe_escaped"
 }
 
 write_desktop_entry() {
-    output=$1
-    executable=$2
-    icon_path=$3
-    quoted_exec=$(quote_exec "$executable")
+    wd_output=$1
+    wd_executable=$2
+    wd_icon=$3
+    wd_quoted_exec=$(quote_exec "$wd_executable")
     {
         printf '%s\n' '[Desktop Entry]'
         printf '%s\n' 'Type=Application'
         printf '%s\n' 'Name=DSH Tray'
         printf '%s\n' 'Name[zh_CN]=DSH 托盘'
         printf '%s\n' 'Comment=System tray controller for DeepSeek Harness'
-        printf 'Exec=%s\n' "$quoted_exec"
-        if [ -n "$icon_path" ]; then
-            printf 'Icon=%s\n' "$icon_path"
+        printf 'Exec=%s\n' "$wd_quoted_exec"
+        if [ -n "$wd_icon" ]; then
+            printf 'Icon=%s\n' "$wd_icon"
         fi
         printf '%s\n' 'Terminal=false'
         printf '%s\n' 'Categories=Utility;Development;'
         printf '%s\n' 'StartupNotify=false'
         printf '%s\n' 'StartupWMClass=dsh-tray'
-    } > "$output"
+    } > "$wd_output"
 }
 
 while [ "$#" -gt 0 ]; do
@@ -104,10 +118,12 @@ while [ "$#" -gt 0 ]; do
         --home)
             [ "$#" -ge 2 ] || die "--home needs a path"
             TARGET_HOME=$2
+            HOME_EXPLICIT=1
             shift 2
             ;;
         --home=*)
             TARGET_HOME=${1#*=}
+            HOME_EXPLICIT=1
             shift
             ;;
         --prefix)
@@ -143,13 +159,28 @@ while [ "$#" -gt 0 ]; do
 done
 
 TARGET_HOME=$(absolute_path "$TARGET_HOME")
+
+# This script lives in packaging/; the repository root (or the installed tree
+# root when the copied script is re-run) is one level up.
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+SCRIPT_PATH=$SCRIPT_DIR/$(basename "$0")
+ROOT_DIR=$(dirname "$SCRIPT_DIR")
+
 if [ -z "$PREFIX" ]; then
-    PREFIX=$TARGET_HOME/.local/$APP
+    if [ "$HOME_EXPLICIT" -eq 0 ] \
+        && [ -f "$ROOT_DIR/bin/dsh-tray" ] \
+        && [ -f "$ROOT_DIR/packaging/install.sh" ]; then
+        # Re-running the installer from an installed tree keeps that tree,
+        # even if HOME points somewhere else (e.g. sudo/other session).
+        PREFIX=$ROOT_DIR
+    else
+        PREFIX=$TARGET_HOME/.local/$APP
+    fi
 fi
 PREFIX=$(absolute_path "$PREFIX")
 
 if [ -z "$BINARY" ]; then
-    for candidate in ./dsh-tray target/release/dsh-tray; do
+    for candidate in ./dsh-tray target/release/dsh-tray "$ROOT_DIR/bin/dsh-tray"; do
         if [ -f "$candidate" ]; then
             BINARY=$candidate
             break
@@ -162,118 +193,115 @@ fi
 BINARY_DIR=$(CDPATH= cd -- "$(dirname "$BINARY")" && pwd)
 BINARY=$BINARY_DIR/$(basename "$BINARY")
 
-# This script lives in packaging/; the repository root is one level up.
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
-ROOT_DIR=$(dirname "$SCRIPT_DIR")
-ICON_SRC=$ROOT_DIR/assets/app/icon.png
-
 APPDIR=${APPDIR:-$TARGET_HOME/.local/share/applications}
-ICONDIR=${ICONDIR:-$TARGET_HOME/.local/share/icons/hicolor/256x256/apps}
-BACKUP_ROOT=$PREFIX/backups
+BACKUP_ROOT=$PREFIX/.backups
 BACKUP_DIR=
 
 # Back up one file that is about to be replaced. The first call creates a
-# unique timestamped directory inside the install root.
+# hidden timestamped directory inside the install root.
 backup_file() {
-    source_path=$1
-    label=$2
-    [ -e "$source_path" ] || return 0
+    bf_source=$1
+    bf_label=$2
+    [ -e "$bf_source" ] || return 0
     if [ -z "$BACKUP_DIR" ]; then
-        stamp=$(date -u +%Y%m%dT%H%M%SZ)
-        candidate=$BACKUP_ROOT/$stamp
-        counter=1
-        while [ -e "$candidate" ]; do
-            candidate=$BACKUP_ROOT/$stamp-$counter
-            counter=$((counter + 1))
+        bf_stamp=$(date -u +%Y%m%dT%H%M%SZ)
+        bf_candidate=$BACKUP_ROOT/$bf_stamp
+        bf_counter=1
+        while [ -e "$bf_candidate" ]; do
+            bf_candidate=$BACKUP_ROOT/$bf_stamp-$bf_counter
+            bf_counter=$((bf_counter + 1))
         done
-        BACKUP_DIR=$candidate
+        BACKUP_DIR=$bf_candidate
         mkdir -p "$BACKUP_DIR"
     fi
-    destination=$BACKUP_DIR/$label
-    mkdir -p "$(dirname "$destination")"
-    cp -p "$source_path" "$destination"
+    bf_destination=$BACKUP_DIR/$bf_label
+    mkdir -p "$(dirname "$bf_destination")"
+    cp -p "$bf_source" "$bf_destination"
 }
 
-mkdir -p "$PREFIX"
+# Copy one file into the install tree, preserving an explicit mode and
+# backing up a previous version when the content differs.
+install_file() {
+    if_source=$1
+    if_destination=$2
+    if_mode=$3
+    if_label=$4
+    if [ ! -f "$if_source" ]; then
+        printf 'install.sh: warning: %s not found; skipping %s\n' "$if_source" "$if_label" >&2
+        return 0
+    fi
+    if [ -f "$if_destination" ] && cmp -s "$if_source" "$if_destination"; then
+        chmod "$if_mode" "$if_destination"
+        return 0
+    fi
+    backup_file "$if_destination" "$if_label"
+    mkdir -p "$(dirname "$if_destination")"
+    cp "$if_source" "$if_destination"
+    chmod "$if_mode" "$if_destination"
+}
 
-# 1. Binary.
-binary_target=$PREFIX/dsh-tray
-if [ -e "$binary_target" ] && cmp -s "$BINARY" "$binary_target"; then
-    printf 'install.sh: binary already current: %s\n' "$binary_target"
-else
-    backup_file "$binary_target" "prefix/dsh-tray"
-    cp "$BINARY" "$binary_target"
-fi
-chmod 0755 "$binary_target"
+mkdir -p "$PREFIX/bin" "$PREFIX/assets/app" "$PREFIX/assets/icons" "$PREFIX/packaging"
 
-# 2. Icon copy inside the install root (this is the desktop-icon backup
-#    location: the icon always exists next to the executable).
-ICON_READY=0
-if [ -f "$ICON_SRC" ]; then
-    backup_file "$PREFIX/icon.png" "prefix/icon.png"
-    cp "$ICON_SRC" "$PREFIX/icon.png"
-    chmod 0644 "$PREFIX/icon.png"
-    ICON_READY=1
-else
-    printf 'install.sh: warning: %s not found; skipping icon install\n' "$ICON_SRC" >&2
-fi
+# 1. Executable.
+install_file "$BINARY" "$PREFIX/bin/dsh-tray" 0755 "bin/dsh-tray"
 
-# 3. Launcher entry inside the install root, with absolute paths so it works
-#    without adding the directory to PATH.
-PREFIX_DESKTOP=$PREFIX/dsh-tray.desktop
-backup_file "$PREFIX_DESKTOP" "prefix/dsh-tray.desktop"
-if [ "$ICON_READY" -eq 1 ]; then
-    write_desktop_entry "$PREFIX_DESKTOP.tmp" "$binary_target" "$PREFIX/icon.png"
+# 2. Application/tray assets, mirroring assets/ from the repository.
+for name in icon.ico icon.png whale.svg; do
+    install_file "$ROOT_DIR/assets/app/$name" "$PREFIX/assets/app/$name" 0644 "assets/app/$name"
+done
+for name in tray-error.png tray-error@2x.png tray-running.png tray-running@2x.png \
+    tray-stopped.png tray-stopped@2x.png whale-base-32.png; do
+    install_file "$ROOT_DIR/assets/icons/$name" "$PREFIX/assets/icons/$name" 0644 "assets/icons/$name"
+done
+
+# 3. Desktop entry inside the install tree (absolute paths).
+PREFIX_DESKTOP=$PREFIX/packaging/dsh-tray.desktop
+if [ -f "$PREFIX/assets/app/icon.png" ]; then
+    write_desktop_entry "$PREFIX/packaging/.dsh-tray.desktop.tmp" "$PREFIX/bin/dsh-tray" "$PREFIX/assets/app/icon.png"
 else
-    write_desktop_entry "$PREFIX_DESKTOP.tmp" "$binary_target" ""
+    write_desktop_entry "$PREFIX/packaging/.dsh-tray.desktop.tmp" "$PREFIX/bin/dsh-tray" ""
 fi
-mv "$PREFIX_DESKTOP.tmp" "$PREFIX_DESKTOP"
+if [ -f "$PREFIX_DESKTOP" ] && cmp -s "$PREFIX/packaging/.dsh-tray.desktop.tmp" "$PREFIX_DESKTOP"; then
+    rm -f "$PREFIX/packaging/.dsh-tray.desktop.tmp"
+else
+    backup_file "$PREFIX_DESKTOP" "packaging/dsh-tray.desktop"
+    mv "$PREFIX/packaging/.dsh-tray.desktop.tmp" "$PREFIX_DESKTOP"
+fi
 chmod 0644 "$PREFIX_DESKTOP"
 
-# 4. Optional XDG integration; every replaced file is backed up first.
-if [ "$INSTALL_DESKTOP" -eq 1 ]; then
-    if [ "$ICON_READY" -eq 1 ]; then
-        mkdir -p "$ICONDIR"
-        backup_file "$ICONDIR/dsh-tray.png" "icons/dsh-tray.png"
-        cp "$PREFIX/icon.png" "$ICONDIR/dsh-tray.png"
-        chmod 0644 "$ICONDIR/dsh-tray.png"
-    fi
-    mkdir -p "$APPDIR"
-    backup_file "$APPDIR/dsh-tray.desktop" "applications/dsh-tray.desktop"
-    cp "$PREFIX_DESKTOP" "$APPDIR/dsh-tray.desktop"
-    chmod 0644 "$APPDIR/dsh-tray.desktop"
+# 4. Copy the installer itself so the installed tree can be used to reinstall.
+install_file "$SCRIPT_PATH" "$PREFIX/packaging/install.sh" 0755 "packaging/install.sh"
 
-    # Refresh desktop and icon caches when the helpers exist; failures are harmless.
+# 5. Optional XDG menu registration. The entry points at the installed assets,
+#    so no separate icon-theme install is needed.
+if [ "$INSTALL_DESKTOP" -eq 1 ]; then
+    mkdir -p "$APPDIR"
+    destination=$APPDIR/dsh-tray.desktop
+    if [ -f "$destination" ] && cmp -s "$PREFIX_DESKTOP" "$destination"; then
+        :
+    else
+        backup_file "$destination" "applications/dsh-tray.desktop"
+        cp "$PREFIX_DESKTOP" "$destination"
+    fi
+    chmod 0644 "$destination"
     if command -v update-desktop-database >/dev/null 2>&1; then
         update-desktop-database "$APPDIR" >/dev/null 2>&1 || true
     fi
-    if [ "$ICON_READY" -eq 1 ] && command -v gtk-update-icon-cache >/dev/null 2>&1; then
-        ICON_THEME_DIR=$(dirname "$(dirname "$ICONDIR")")
-        gtk-update-icon-cache -q -t -f "$ICON_THEME_DIR" >/dev/null 2>&1 || true
-    fi
 fi
 
-printf '\nInstalled:\n'
-printf '  binary:  %s\n' "$binary_target"
-printf '  root:    %s\n' "$PREFIX"
-if [ "$ICON_READY" -eq 1 ]; then
-    printf '  icon:    %s\n' "$PREFIX/icon.png"
-fi
-printf '  desktop: %s\n' "$PREFIX_DESKTOP"
+printf '\nInstalled tree: %s\n' "$PREFIX"
+printf '  bin/dsh-tray\n'
+printf '  assets/app/{icon.ico,icon.png,whale.svg}\n'
+printf '  assets/icons/{tray-*.png,whale-base-32.png}\n'
+printf '  packaging/{dsh-tray.desktop,install.sh}\n'
 if [ "$INSTALL_DESKTOP" -eq 1 ]; then
-    printf '  menu:    %s\n' "$APPDIR/dsh-tray.desktop"
-    if [ "$ICON_READY" -eq 1 ]; then
-        printf '  theme:   %s\n' "$ICONDIR/dsh-tray.png"
-    fi
+    printf '\nMenu entry: %s\n' "$APPDIR/dsh-tray.desktop"
+else
+    printf '\nXDG menu entry skipped (--no-desktop); use %s\n' "$PREFIX/bin/dsh-tray"
 fi
 if [ -n "$BACKUP_DIR" ]; then
-    printf '  backup:  %s\n' "$BACKUP_DIR"
+    printf '\nBackup: %s\n' "$BACKUP_DIR"
 fi
-
-printf '\nRun it with:\n  %s\n' "$binary_target"
-if [ "$INSTALL_DESKTOP" -eq 1 ]; then
-    printf 'Or launch "DSH Tray" from the desktop application menu.\n'
-else
-    printf 'XDG menu integration skipped (--no-desktop); use the absolute path above.\n'
-fi
+printf '\nRun it with:\n  %s\n' "$PREFIX/bin/dsh-tray"
+printf 'Reinstall/update with:\n  %s --binary <new-dsh-tray>\n' "$PREFIX/packaging/install.sh"
 printf '\nInstall the dsh CLI if needed: npm install -g @deepseek-ai/dsh@latest\n'

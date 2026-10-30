@@ -131,15 +131,16 @@ checkout:
 packaging/install.sh --binary target/release/dsh-tray
 ```
 
-The default install root is `~/.local/dsh-tray` and is self-contained: the
-binary, an `icon.png` copy, a generated `dsh-tray.desktop` with absolute
-`Exec`/`Icon` paths, and a `backups/` directory. The entry and icon are also
-registered in `~/.local/share/applications` and
-`~/.local/share/icons/hicolor/256x256/apps` unless `--no-desktop` is passed.
+The default install root is `~/.local/dsh-tray` and mirrors the repository
+layout: `bin/dsh-tray`, `assets/app/{icon.ico,icon.png,whale.svg}`,
+`assets/icons/` (all tray PNGs plus `whale-base-32.png`), and `packaging/` with a
+generated `dsh-tray.desktop` (absolute `Exec`/`Icon` paths) and a copy of
+`install.sh`. Re-running the copied installer updates that tree; the menu entry
+is registered in `~/.local/share/applications` unless `--no-desktop` is passed.
 `--home DIR` targets another user's home, `--prefix DIR` sets a custom root, and
-`APPDIR` / `ICONDIR` override the XDG directories. Every replaced file is backed
-up under `<install-root>/backups/<timestamp>/` before it is overwritten, so the
-desktop icon always has a backup inside the install root.
+`APPDIR` overrides the applications directory. Every replaced file is backed up
+under the hidden `<install-root>/.backups/<timestamp>/` before it is overwritten,
+so the desktop icon/assets always have a backup inside the install tree.
 
 ### macOS
 

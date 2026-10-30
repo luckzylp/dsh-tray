@@ -114,8 +114,9 @@ Linux:
 
 ```bash
 tar xzf dsh-tray-linux-x86_64.tar.gz
-install -Dm755 dsh-tray "$HOME/.local/dsh-tray/dsh-tray"
-# optional desktop entry/icon + backups: use packaging/install.sh from a checkout
+install -Dm755 dsh-tray "$HOME/.local/dsh-tray/bin/dsh-tray"
+# for the full assets/packaging tree, desktop entry and backups use
+# packaging/install.sh from a checkout
 ```
 
 macOS:
@@ -157,27 +158,41 @@ without `sudo`:
 packaging/install.sh --binary target/release/dsh-tray
 ```
 
-Defaults to a self-contained directory, `~/.local/dsh-tray` (for example
-`/home/Kevin/.local/dsh-tray`), containing:
+Defaults to a self-contained tree, `~/.local/dsh-tray` (for example
+`/home/Kevin/.local/dsh-tray`), matching the repository layout:
 
 ```text
 ~/.local/dsh-tray/
-  dsh-tray              executable
-  icon.png              desktop icon copy
-  dsh-tray.desktop      launcher entry with absolute paths
-  backups/<timestamp>/  files replaced by the install
+├── assets
+│   ├── app
+│   │   ├── icon.ico
+│   │   ├── icon.png
+│   │   └── whale.svg
+│   └── icons
+│       ├── tray-error@2x.png
+│       ├── tray-error.png
+│       ├── tray-running@2x.png
+│       ├── tray-running.png
+│       ├── tray-stopped@2x.png
+│       ├── tray-stopped.png
+│       └── whale-base-32.png
+├── bin
+│   └── dsh-tray
+└── packaging
+    ├── dsh-tray.desktop
+    └── install.sh
 ```
 
-The entry and icon are also registered in `~/.local/share/applications` and
-`~/.local/share/icons/hicolor/256x256/apps`; pass `--no-desktop` to keep the
-install root only. Use `--home DIR` to install for another user's home,
-`--prefix DIR` for a custom root, and `APPDIR` / `ICONDIR` to override the XDG
-directories. Every replaced file (binary, icon, desktop entry, including the
-XDG copies) is backed up under `<install-root>/backups/<timestamp>/`, so the
-desktop icon always has a backup inside that root. The generated launcher uses
-absolute `Exec`/`Icon` paths, so the directory does not need to be on `PATH`.
-For manual setups, `packaging/dsh-tray.desktop` is a ready-made entry that
-expects `dsh-tray` on `PATH`.
+`packaging/dsh-tray.desktop` is generated with absolute `Exec`/`Icon` paths, and
+`packaging/install.sh` is copied there so the tree can reinstall/update itself
+(`~/.local/dsh-tray/packaging/install.sh --binary <new-dsh-tray>`). The menu entry
+is registered in `~/.local/share/applications` by default; pass `--no-desktop`
+to keep the install tree only. Use `--home DIR` to install for another user's
+home, `--prefix DIR` for a custom root, and `APPDIR` to override the
+applications directory. Replaced files are backed up under the hidden
+`~/.local/dsh-tray/.backups/<timestamp>/`, so the desktop icon/assets always
+have a backup inside that tree. The launcher uses absolute paths, so the
+directory does not need to be on `PATH`.
 
 ## Quick start
 
