@@ -19,7 +19,7 @@ use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
 use crate::app::{Command, Notice, Snapshot};
 use crate::channel::Channel;
-use crate::config::AppPaths;
+use crate::config::{AppPaths, Language};
 use crate::i18n;
 use crate::logging;
 use menu_spec::{ItemKind, MenuSpec, MenuSpecItem};
@@ -156,9 +156,14 @@ pub fn command_for(id: &MenuId) -> Option<Command> {
         menu_spec::ids::OPEN_CONFIG => Some(Command::OpenConfigFolder),
         menu_spec::ids::QUIT => Some(Command::Quit),
         _ => id
-            .strip_prefix(menu_spec::ids::CHANNEL_PREFIX)
-            .and_then(Channel::parse)
-            .map(Command::SwitchChannel),
+            .strip_prefix(menu_spec::ids::LANGUAGE_PREFIX)
+            .and_then(Language::parse)
+            .map(Command::SetLanguage)
+            .or_else(|| {
+                id.strip_prefix(menu_spec::ids::CHANNEL_PREFIX)
+                    .and_then(Channel::parse)
+                    .map(Command::SwitchChannel)
+            }),
     }
 }
 
@@ -252,6 +257,7 @@ mod tests {
     fn snapshot() -> Snapshot {
         Snapshot {
             lang: Lang::En,
+            language: Language::Auto,
             app_version: crate::VERSION,
             installed_version: Some("0.2.1".to_string()),
             channel: Channel::Latest,
@@ -302,6 +308,23 @@ mod tests {
             command_for(&id("channel:stable")),
             Some(Command::SwitchChannel(Channel::Latest))
         );
+    }
+
+    #[test]
+    fn maps_language_ids() {
+        assert_eq!(
+            command_for(&id("language:auto")),
+            Some(Command::SetLanguage(Language::Auto))
+        );
+        assert_eq!(
+            command_for(&id("language:en")),
+            Some(Command::SetLanguage(Language::En))
+        );
+        assert_eq!(
+            command_for(&id("language:zh")),
+            Some(Command::SetLanguage(Language::Zh))
+        );
+        assert_eq!(command_for(&id("language:fr")), None);
     }
 
     #[test]

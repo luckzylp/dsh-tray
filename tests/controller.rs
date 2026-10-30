@@ -13,7 +13,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use dsh_tray::app::{self, Activity, Command, ControllerHost, Message, Notice, ServiceState, Snapshot};
-use dsh_tray::config::{AppPaths, Config};
+use dsh_tray::config::{AppPaths, Config, Language};
+use dsh_tray::i18n::Lang;
 use dsh_tray::tray::menu_spec;
 
 fn write_executable(path: &Path, body: &str) {
@@ -77,6 +78,7 @@ struct Harness {
     shutdown: Arc<AtomicBool>,
     tx: Sender<Message>,
     pidfile: PathBuf,
+    config_file: PathBuf,
 }
 
 impl Harness {
@@ -85,6 +87,7 @@ impl Harness {
         let (config, pidfile) = fake_config(dir.path());
         let paths = AppPaths::with_dirs(dir.path().join("cfg"), dir.path().join("data"));
         paths.ensure().expect("ensure dirs");
+        let config_file = paths.config_file();
         let snapshots = Arc::new(Mutex::new(Vec::new()));
         let shutdown = Arc::new(AtomicBool::new(false));
         let sink = snapshots.clone();
@@ -109,6 +112,7 @@ impl Harness {
             shutdown,
             tx,
             pidfile,
+            config_file,
         }
     }
 
@@ -318,12 +322,47 @@ fn restart_leaves_the_service_running_and_idle() {
     harness.quit();
 }
 
+#[test]
+fn language_preference_switches_the_ui_and_persists() {
+    let harness = Harness::new();
+    // Wait until the environment snapshot settles.
+    harness
+        .wait_new(0, Duration::from_secs(15), |snapshot| {
+            snapshot.installed_version.is_some()
+        })
+        .expect("controller did not initialise");
+
+    let mark = harness.mark();
+    harness.send(Command::SetLanguage(Language::Zh));
+    let (_, zh) = harness
+        .wait_new(mark, Duration::from_secs(10), |snapshot| {
+            snapshot.language == Language::Zh && snapshot.lang == Lang::Zh
+        })
+        .expect("language did not switch to Chinese");
+    assert_eq!(zh.lang, Lang::Zh);
+    let saved = std::fs::read_to_string(&harness.config_file).expect("saved config");
+    assert!(saved.contains("\"language\": \"zh\""), "{saved}");
+
+    let mark = harness.mark();
+    harness.send(Command::SetLanguage(Language::Auto));
+    let expected = Lang::resolve(Language::Auto);
+    harness
+        .wait_new(mark, Duration::from_secs(10), |snapshot| {
+            snapshot.language == Language::Auto && snapshot.lang == expected
+        })
+        .expect("language did not switch back to automatic");
+    let saved = std::fs::read_to_string(&harness.config_file).expect("saved config");
+    assert!(saved.contains("\"language\": \"auto\""), "{saved}");
+    harness.quit();
+}
+
 /// While the service is Starting (up to the 60 s startup timeout) the menu
 /// offers Stop so a hung start can be cancelled without quitting the tray.
 #[test]
 fn menu_offers_stop_while_starting() {
     let snapshot = Snapshot {
         lang: dsh_tray::i18n::Lang::En,
+        language: Language::Auto,
         app_version: dsh_tray::VERSION,
         installed_version: Some("0.2.1".to_string()),
         channel: dsh_tray::channel::Channel::Latest,

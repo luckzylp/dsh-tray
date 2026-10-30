@@ -101,6 +101,10 @@ pub enum Key {
     MenuRestart,
     MenuVersion,
     MenuChannel,
+    MenuLanguage,
+    MenuLanguageAuto,
+    MenuLanguageEn,
+    MenuLanguageZh,
     MenuCheckUpdates,
     MenuUpdateTo,
     MenuUpToDate,
@@ -118,7 +122,7 @@ pub enum Key {
 
 impl Key {
     /// Every key, for exhaustiveness tests and diagnostics.
-    pub const ALL: [Key; 38] = [
+    pub const ALL: [Key; 42] = [
         Key::AppTitle,
         Key::StateRunning,
         Key::StateStopped,
@@ -145,6 +149,10 @@ impl Key {
         Key::MenuRestart,
         Key::MenuVersion,
         Key::MenuChannel,
+        Key::MenuLanguage,
+        Key::MenuLanguageAuto,
+        Key::MenuLanguageEn,
+        Key::MenuLanguageZh,
         Key::MenuCheckUpdates,
         Key::MenuUpdateTo,
         Key::MenuUpToDate,
@@ -267,6 +275,16 @@ pub fn t(lang: Lang, key: Key) -> &'static str {
             Lang::En => "Channel",
             Lang::Zh => "发布通道",
         },
+        Key::MenuLanguage => match lang {
+            Lang::En => "Language",
+            Lang::Zh => "语言",
+        },
+        Key::MenuLanguageAuto => match lang {
+            Lang::En => "Follow system",
+            Lang::Zh => "跟随系统",
+        },
+        Key::MenuLanguageEn => "English",
+        Key::MenuLanguageZh => "简体中文",
         Key::MenuCheckUpdates => match lang {
             Lang::En => "Check for updates",
             Lang::Zh => "检查更新",
@@ -402,6 +420,26 @@ pub fn update_label(lang: Lang, channel: Channel, version: Option<&str>) -> Stri
     }
 }
 
+/// Menu label for a language preference.
+///
+/// Concrete languages use their native names; "follow system" is localized and
+/// carries the language detection currently resolves to, so the effect of
+/// switching back to automatic mode is visible before clicking it.
+pub fn language_label(lang: Lang, preference: Language) -> String {
+    match preference {
+        Language::Auto => {
+            let detected = Lang::detect();
+            let name = match detected {
+                Lang::En => t(lang, Key::MenuLanguageEn),
+                Lang::Zh => t(lang, Key::MenuLanguageZh),
+            };
+            format!("{} ({name})", t(lang, Key::MenuLanguageAuto))
+        }
+        Language::En => t(lang, Key::MenuLanguageEn).to_string(),
+        Language::Zh => t(lang, Key::MenuLanguageZh).to_string(),
+    }
+}
+
 /// Tray tooltip for the current state; URLs are shown without their query
 /// string so an auth token is never exposed.
 pub fn tooltip(lang: Lang, state: &ServiceState) -> String {
@@ -451,6 +489,18 @@ mod tests {
             t(Lang::Zh, Key::NoticeExternalInstance)
         );
         assert_ne!(t(Lang::En, Key::NoticeOpenFailed), t(Lang::Zh, Key::NoticeOpenFailed));
+    }
+
+    #[test]
+    fn language_labels_use_native_names_and_show_the_detected_locale() {
+        assert_eq!(language_label(Lang::En, Language::En), "English");
+        assert_eq!(language_label(Lang::En, Language::Zh), "简体中文");
+        assert_eq!(language_label(Lang::Zh, Language::Zh), "简体中文");
+        let auto = language_label(Lang::En, Language::Auto);
+        assert!(auto.starts_with("Follow system ("), "{auto}");
+        assert!(auto.contains("English") || auto.contains("简体中文"), "{auto}");
+        let auto_zh = language_label(Lang::Zh, Language::Auto);
+        assert!(auto_zh.starts_with("跟随系统 ("), "{auto_zh}");
     }
 
     #[test]

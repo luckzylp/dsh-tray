@@ -7,6 +7,7 @@
 
 use crate::app::{ServiceState, Snapshot};
 use crate::channel::{tag_version, Channel};
+use crate::config::Language;
 use crate::i18n::{self, Key};
 
 /// Stable menu item ids shared with [`command_for`](crate::tray::command_for).
@@ -18,6 +19,7 @@ pub mod ids {
     pub const CHECK_UPDATES: &str = "check-updates";
     pub const UPDATE_NOW: &str = "update-now";
     pub const CHANNEL_PREFIX: &str = "channel:";
+    pub const LANGUAGE_PREFIX: &str = "language:";
     pub const AUTOSTART: &str = "toggle-autostart";
     pub const START_ON_LAUNCH: &str = "toggle-start-on-launch";
     pub const OPEN_LOG: &str = "open-log";
@@ -122,6 +124,7 @@ pub fn build(snapshot: &Snapshot) -> MenuSpec {
     items.push(MenuSpecItem::Separator);
     items.push(version_submenu(snapshot));
     items.push(channel_submenu(snapshot));
+    items.push(language_submenu(snapshot));
     items.push(MenuSpecItem::Separator);
 
     items.push(entry_check(
@@ -258,6 +261,33 @@ fn channel_submenu(snapshot: &Snapshot) -> MenuSpecItem {
     }
 }
 
+/// Language submenu: follow the system locale, or pin English/Simplified Chinese.
+fn language_submenu(snapshot: &Snapshot) -> MenuSpecItem {
+    let lang = snapshot.lang;
+    let items = [Language::Auto, Language::En, Language::Zh]
+        .iter()
+        .map(|preference| {
+            let tag = match preference {
+                Language::Auto => "auto",
+                Language::En => "en",
+                Language::Zh => "zh",
+            };
+            MenuSpecItem::Entry(MenuEntry {
+                id: format!("{}{tag}", ids::LANGUAGE_PREFIX),
+                label: i18n::language_label(lang, *preference),
+                enabled: true,
+                kind: ItemKind::Check {
+                    checked: snapshot.language == *preference,
+                },
+            })
+        })
+        .collect();
+    MenuSpecItem::Submenu {
+        label: i18n::t(lang, Key::MenuLanguage).to_string(),
+        items,
+    }
+}
+
 fn entry(id: &str, label: impl Into<String>, enabled: bool) -> MenuSpecItem {
     MenuSpecItem::Entry(MenuEntry {
         id: id.to_string(),
@@ -325,6 +355,7 @@ mod tests {
     fn sample() -> Snapshot {
         Snapshot {
             lang: Lang::En,
+            language: Language::Auto,
             app_version: crate::VERSION,
             installed_version: Some("0.2.1-rc.5".to_string()),
             channel: Channel::Latest,
@@ -375,6 +406,9 @@ mod tests {
                 "channel:latest",
                 "channel:next",
                 "channel:alpha",
+                "language:auto",
+                "language:en",
+                "language:zh",
                 "toggle-autostart",
                 "toggle-start-on-launch",
                 "open-log",
@@ -430,6 +464,9 @@ mod tests {
                 "channel:latest",
                 "channel:next",
                 "channel:alpha",
+                "language:auto",
+                "language:en",
+                "language:zh",
                 "toggle-autostart",
                 "toggle-start-on-launch",
                 "open-log",
@@ -465,6 +502,9 @@ mod tests {
                 "channel:latest",
                 "channel:next",
                 "channel:alpha",
+                "language:auto",
+                "language:en",
+                "language:zh",
                 "toggle-autostart",
                 "toggle-start-on-launch",
                 "open-log",
@@ -600,6 +640,42 @@ mod tests {
     }
 
     #[test]
+    fn language_submenu_checks_the_preference_and_localizes() {
+        let mut snapshot = sample();
+        snapshot.lang = Lang::Zh;
+        snapshot.language = Language::Zh;
+        let spec = build(&snapshot);
+        let submenu = spec
+            .submenu(i18n::t(Lang::Zh, Key::MenuLanguage))
+            .expect("language submenu");
+        let checked: Vec<&str> = submenu
+            .iter()
+            .filter_map(|item| match item {
+                MenuSpecItem::Entry(entry) if entry.kind == ItemKind::Check { checked: true } => {
+                    Some(entry.id.as_str())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(checked, vec!["language:zh"]);
+        assert_eq!(label_of(&spec, "language:zh"), "简体中文");
+        assert_eq!(label_of(&spec, "language:en"), "English");
+        assert!(
+            label_of(&spec, "language:auto").starts_with("跟随系统 ("),
+            "{}",
+            label_of(&spec, "language:auto")
+        );
+
+        snapshot.lang = Lang::En;
+        snapshot.language = Language::Auto;
+        let spec = build(&snapshot);
+        let auto = spec.entry("language:auto").expect("follow-system entry");
+        assert_eq!(auto.kind, ItemKind::Check { checked: true });
+        assert!(auto.label.starts_with("Follow system ("), "{}", auto.label);
+        assert_eq!(label_of(&spec, "language:zh"), "简体中文");
+    }
+
+    #[test]
     fn notice_and_detail_are_shown_and_capped() {
         let mut snapshot = sample();
         snapshot.notice = Some(Notice::UpdateFailed);
@@ -649,6 +725,7 @@ mod tests {
         for id in ids {
             assert!(
                 id.starts_with("channel:")
+                    || id.starts_with("language:")
                     || [
                         "open-web",
                         "start-dsh",

@@ -50,8 +50,8 @@ only UI is the tray menu (tao + tray-icon/muda, GTK/AppIndicator on Linux).
   existing web UI is opened.
 - **Only tray-started processes** — `Stop`/`Restart` act only on the `dsh`
   process the tray started; it never attaches to, or stops, another server.
-- **English and Simplified Chinese UI** — chosen from the config or the system
-  locale.
+- **English and Simplified Chinese UI** — switch from the **Language** submenu
+  (follow system, English, 简体中文); the choice is saved to the config.
 - **Diagnostics CLI** — `--check`, `--check --json` and `--smoke` for health
   checks and CI smoke tests.
 
@@ -197,6 +197,7 @@ collisions with an already-running server.
 | **Restart DSH** | Stops and starts the managed process again |
 | Version submenu | Installed version, per-channel target versions, **Check for updates**, **Update to …** |
 | Channel submenu | Switch between `latest`, `next` and `alpha` |
+| Language submenu | Follow the system locale, English, or 简体中文 (persisted) |
 | **Launch tray at login** | Toggles the platform autostart entry |
 | **Start DSH when tray starts** | Toggles `start_dsh_on_launch` |
 | **Open log** / **Open config folder** | Opens `dsh-tray.log` / the config directory |
@@ -239,7 +240,7 @@ preventing startup.
 | `open_browser_when_ready` | `true` | Open the browser when the tray auto-starts dsh at launch (`--hidden` suppresses it; **Open Web UI** always opens it) |
 | `start_dsh_on_launch` | `true` | Start `dsh web` when the tray starts |
 | `autostart` | `false` | Launch the tray at login (mirrors the platform autostart entry) |
-| `language` | `"auto"` | Tray UI language: `auto` (system locale), `en` or `zh` |
+| `language` | `"auto"` | Tray UI language: `auto` (system locale), `en` or `zh`; also switchable from the **Language** submenu |
 | `dsh_path` | `null` | Explicit path to the dsh entry (`bin.js`, shim or symlink); bypasses PATH discovery |
 | `node_path` | `null` | Explicit `node` executable |
 | `npm_path` | `null` | Explicit `npm` executable |

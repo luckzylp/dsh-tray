@@ -14,7 +14,7 @@ use chrono::Local;
 
 use crate::autostart;
 use crate::channel::{self, Channel, DistTags};
-use crate::config::{AppPaths, Config};
+use crate::config::{AppPaths, Config, Language};
 use crate::dsh::{self, DshInstall};
 use crate::i18n::Lang;
 use crate::logging;
@@ -46,6 +46,8 @@ pub enum Command {
     UpdateCurrentChannel,
     /// Persist a new preferred channel; update the package when it differs.
     SwitchChannel(Channel),
+    /// Change the tray UI language (follow system, English or Chinese).
+    SetLanguage(Language),
     /// Toggle the platform autostart entry.
     ToggleAutostart,
     /// Toggle "start dsh when the tray starts".
@@ -166,7 +168,10 @@ pub enum Notice {
 /// Immutable view of the world rendered by the tray.
 #[derive(Clone, Debug)]
 pub struct Snapshot {
+    /// Resolved UI language used to render this snapshot.
     pub lang: Lang,
+    /// Configured language preference (auto/en/zh), for the menu check marks.
+    pub language: Language,
     pub app_version: &'static str,
     pub installed_version: Option<String>,
     pub channel: Channel,
@@ -186,6 +191,7 @@ impl Snapshot {
     pub fn initial(config: &Config, _paths: &AppPaths) -> Self {
         Self {
             lang: Lang::resolve(config.language),
+            language: config.language,
             app_version: crate::VERSION,
             installed_version: None,
             channel: config.channel,
@@ -320,6 +326,7 @@ impl Controller {
     fn publish(&self) {
         let snapshot = Snapshot {
             lang: self.lang,
+            language: self.config.language,
             app_version: crate::VERSION,
             installed_version: self.dsh.as_ref().map(|install| install.version.clone()),
             channel: self.config.channel,
@@ -497,6 +504,7 @@ impl Controller {
                 self.clear_notice();
                 self.switch_channel(channel);
             }
+            Command::SetLanguage(language) => self.set_language(language),
             Command::ToggleAutostart => self.toggle_autostart(),
             Command::ToggleStartOnLaunch => self.toggle_start_on_launch(),
             Command::OpenLog => {
@@ -665,6 +673,19 @@ impl Controller {
             self.detail = Some(error.to_string());
             self.publish();
         }
+    }
+
+    fn set_language(&mut self, language: Language) {
+        if self.config.language == language {
+            return;
+        }
+        logging::info(format!("language preference: {language}"));
+        self.config.language = language;
+        self.lang = Lang::resolve(language);
+        self.save_config();
+        // Keep any current notice/error: it is localized when rendered, and a
+        // language change must not reset the service status or icon colour.
+        self.publish();
     }
 
     fn restart(&mut self) {

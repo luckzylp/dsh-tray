@@ -45,7 +45,8 @@ DSH Tray 是一个原生、跨平台的系统托盘控制器，用于控制
   图标；如果 dsh 正在服务，会打开已有的 Web 界面。
 - **只管理自己启动的进程** —— `停止`/`重启` 只作用于托盘启动的 `dsh` 进程，不会
   接管或停止其他服务。
-- **英文与简体中文界面** —— 根据配置或系统区域设置选择。
+- **英文与简体中文界面** —— 在 **语言** 子菜单中切换（跟随系统、English、简体中文），
+  选择会保存到配置。
 - **诊断命令行** —— `--check`、`--check --json` 和 `--smoke`，用于健康检查和 CI
   冒烟测试。
 
@@ -184,6 +185,7 @@ packaging/install.sh --binary target/release/dsh-tray
 | **重启 DSH** | 停止并重新启动托管进程 |
 | 版本子菜单 | 已安装版本、各通道的目标版本、**检查更新**、**更新到 …** |
 | 通道子菜单 | 在 `latest`、`next` 和 `alpha` 之间切换 |
+| 语言子菜单 | 跟随系统区域、English 或简体中文（会持久保存） |
 | **登录时启动托盘** | 切换平台自启动项 |
 | **托盘启动时启动 DSH** | 切换 `start_dsh_on_launch` |
 | **打开日志** / **打开配置目录** | 打开 `dsh-tray.log` / 配置目录 |
@@ -225,7 +227,7 @@ packaging/install.sh --binary target/release/dsh-tray
 | `open_browser_when_ready` | `true` | 托盘启动时自动启动 dsh 并在就绪后打开浏览器（`--hidden` 会抑制；**Open Web UI** 始终会打开） |
 | `start_dsh_on_launch` | `true` | 托盘启动时启动 `dsh web` |
 | `autostart` | `false` | 登录时启动托盘（与平台自启动项保持一致） |
-| `language` | `"auto"` | 托盘界面语言：`auto`（跟随系统区域）、`en` 或 `zh` |
+| `language` | `"auto"` | 托盘界面语言：`auto`（跟随系统区域）、`en` 或 `zh`；也可在 **语言** 子菜单中切换 |
 | `dsh_path` | `null` | 显式指定 dsh 入口（`bin.js`、shim 或符号链接），绕过 PATH 探测 |
 | `node_path` | `null` | 显式指定 `node` 可执行文件 |
 | `npm_path` | `null` | 显式指定 `npm` 可执行文件 |
