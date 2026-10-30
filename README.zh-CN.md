@@ -179,11 +179,13 @@ packaging/install.sh --binary target/release/dsh-tray
 用 `--home DIR` 可为其他用户的主目录安装，`--prefix DIR` 自定义安装根目录，
 `APPDIR` 可覆盖 applications 目录。被替换的文件会备份到隐藏目录
 `~/.local/dsh-tray/.backups/<时间戳>/`，因此桌面图标/资源在该目录下始终有备份。
-启动项使用绝对路径，无需把安装目录加入 `PATH`。
+如果缺少 `dsh` 命令行，安装脚本还会执行
+`npm install -g @deepseek-ai/dsh@latest`（加 `--no-dsh` 可跳过）。启动项使用绝对
+路径，无需把安装目录加入 `PATH`。
 
 ## 快速开始
 
-1. 如果还没有安装 `dsh` 命令行：
+1. 如果还没有安装 `dsh` 命令行（安装脚本和托盘也可以自动全局安装）：
 
    ```bash
    npm install -g @deepseek-ai/dsh@latest
@@ -317,9 +319,13 @@ packaging/install.sh --binary target/release/dsh-tray
 - **切换通道** —— 偏好总是会保存。只有当目标 tag 指向不同版本时才会调用 npm；
   如果托管进程正在运行，随后会重启它。
 - **检查更新** —— 获取 dist-tags，并用 semver 比较版本。
+- **安装** —— 如果 dsh 不存在，点击 **启动 DSH**（或在 `start_dsh_on_launch` 开启时
+  启动托盘）会先执行 `npm install -g @deepseek-ai/dsh@<当前通道>`，然后启动服务。
+  安装脚本在缺少 dsh 时也会这样做（`--no-dsh` 可跳过）。
 - **更新** —— 先停止托管的子进程，执行
   `npm install -g @deepseek-ai/dsh@<tag>`，重新读取已安装版本，如果之前正在运行则
-  重新启动子进程。
+  重新启动子进程。安装和更新都使用 dsh 所在 Node 安装自带的 npm；当 GUI 会话的
+  PATH 不完整时，发现逻辑也会查找 fnm/nvm/volta/asdf/pnpm/bun 及系统全局安装。
 - **失败处理** —— 在托盘标题栏显示并写入日志。npm 权限错误会原样输出，并附带关于
   全局 prefix 的提示。
 
@@ -372,15 +378,18 @@ DSH_TRAY_DATA_DIR=/tmp/dsh-tray-data dsh-tray --check
 
 ### 托盘提示未安装 dsh
 
-全局安装命令行并确认它在 `PATH` 中：
+点击 **启动 DSH** 时，如果找不到任何安装，托盘会自动执行
+`npm install -g @deepseek-ai/dsh@latest`，然后启动服务。`packaging/install.sh`
+在安装期间也会这样做（除非加 `--no-dsh`）。也可以手动安装：
 
 ```bash
 npm install -g @deepseek-ai/dsh@latest
 dsh --version
 ```
 
-如果 `dsh` 位于非标准 prefix，请在 `config.json` 中设置 `dsh_path`（可选地还有
-`node_path` / `npm_path`）。
+如果自动安装失败，请在日志中查看 npm 的错误（通常是全局 npm prefix 的权限
+问题）。如果 `dsh` 位于非标准 prefix，请在 `config.json` 中设置 `dsh_path`
+（可选地还有 `node_path` / `npm_path`）。
 
 ### npm 报 EACCES / 权限错误
 

@@ -63,6 +63,12 @@ impl NpmClient {
     /// dist-tags calls never shell out to npm again.
     pub fn discover(config: &Config) -> Result<Self> {
         let program = resolve_program(config)?;
+        Self::discover_with_program(config, program)
+    }
+
+    /// Build a client for an explicitly chosen npm (for example the npm that
+    /// belongs to the Node installation containing dsh).
+    pub fn discover_with_program(config: &Config, program: PathBuf) -> Result<Self> {
         let registry = resolve_registry(&program, config)?;
         Ok(Self { program, registry })
     }
@@ -209,10 +215,10 @@ fn resolve_program(config: &Config) -> Result<PathBuf> {
         }
         return Ok(configured.to_path_buf());
     }
-    dsh::find_in_path("npm").ok_or_else(|| {
+    dsh::find_in_path("npm").or_else(dsh::find_known_npm).ok_or_else(|| {
         anyhow!(
-            "npm not found on PATH; install Node.js from https://nodejs.org/ \
-             or set npm_path in the config"
+            "npm not found on PATH or in a known Node installation; \
+                 install Node.js from https://nodejs.org/ or set npm_path in the config"
         )
     })
 }

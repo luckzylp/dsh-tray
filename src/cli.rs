@@ -94,7 +94,14 @@ pub fn run_check(as_json: bool) -> Result<()> {
     let lang = Lang::resolve(config.language);
 
     let dsh = DshInstall::discover(&config);
-    let npm = NpmClient::discover(&config);
+    // Prefer the npm that belongs to the Node installation containing dsh;
+    // fall back to PATH/known-npm discovery when dsh is missing.
+    let npm = match &dsh {
+        Ok(install) => {
+            NpmClient::discover_with_program(&config, install.npm.clone()).or_else(|_| NpmClient::discover(&config))
+        }
+        Err(_) => NpmClient::discover(&config),
+    };
     let offline = std::env::var_os("DSH_TRAY_OFFLINE").is_some();
     let tags = if offline {
         Err("skipped (DSH_TRAY_OFFLINE is set)".to_string())

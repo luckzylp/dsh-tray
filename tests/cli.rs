@@ -238,9 +238,9 @@ fn check_without_node_or_npm_exits_1_with_actionable_advice() {
     assert_eq!(output.status.code(), Some(1), "stdout: {}", stdout(&output));
     let message = stderr(&output);
     assert!(message.contains("dsh is not usable"), "{message}");
-    assert!(message.contains("npm not found on PATH"), "{message}");
-    assert!(message.contains("nodejs.org"), "{message}");
-    assert!(message.contains("npm_path"), "{message}");
+    assert!(message.contains("dsh not found"), "{message}");
+    assert!(message.contains("npm install -g @deepseek-ai/dsh@latest"), "{message}");
+    assert!(message.contains("dsh_path"), "{message}");
 }
 
 #[test]
@@ -253,7 +253,15 @@ fn check_json_without_node_or_npm_still_prints_the_report_and_exits_1() {
     assert!(report["dsh"]["error"]
         .as_str()
         .unwrap_or_default()
-        .contains("npm not found"));
+        .contains("dsh not found"));
+    // npm may still be found via a known system Node installation even when
+    // PATH is empty; if it is absent, the report must explain that clearly.
+    if report["npm"]["found"] == serde_json::Value::Bool(false) {
+        assert!(report["npm"]["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("npm not found"));
+    }
     assert_eq!(report["installed_version"], serde_json::Value::Null);
     assert_eq!(report["channel_target"], serde_json::Value::Null);
     assert!(stderr(&output).contains("dsh is not usable"), "{}", stderr(&output));

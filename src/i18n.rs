@@ -82,9 +82,12 @@ pub enum Key {
     ActivityUpdating,
     ActivityUpdatingSimple,
     ActivityRestarting,
+    ActivityInstalling,
     // Transient notices / diagnostics.
     NoticeUpdateSucceeded,
     NoticeUpdateFailed,
+    NoticeInstalling,
+    NoticeInstallFailed,
     NoticeCheckFailed,
     NoticeStartFailed,
     NoticeStopFailed,
@@ -122,7 +125,7 @@ pub enum Key {
 
 impl Key {
     /// Every key, for exhaustiveness tests and diagnostics.
-    pub const ALL: [Key; 42] = [
+    pub const ALL: [Key; 45] = [
         Key::AppTitle,
         Key::StateRunning,
         Key::StateStopped,
@@ -132,8 +135,11 @@ impl Key {
         Key::ActivityUpdating,
         Key::ActivityUpdatingSimple,
         Key::ActivityRestarting,
+        Key::ActivityInstalling,
         Key::NoticeUpdateSucceeded,
         Key::NoticeUpdateFailed,
+        Key::NoticeInstalling,
+        Key::NoticeInstallFailed,
         Key::NoticeCheckFailed,
         Key::NoticeStartFailed,
         Key::NoticeStopFailed,
@@ -207,6 +213,10 @@ pub fn t(lang: Lang, key: Key) -> &'static str {
             Lang::En => "Restarting…",
             Lang::Zh => "正在重启…",
         },
+        Key::ActivityInstalling => match lang {
+            Lang::En => "Installing dsh ({channel})…",
+            Lang::Zh => "正在安装 dsh（{channel}）…",
+        },
         Key::NoticeUpdateSucceeded => match lang {
             Lang::En => "Updated successfully",
             Lang::Zh => "更新成功",
@@ -214,6 +224,14 @@ pub fn t(lang: Lang, key: Key) -> &'static str {
         Key::NoticeUpdateFailed => match lang {
             Lang::En => "Update failed",
             Lang::Zh => "更新失败",
+        },
+        Key::NoticeInstalling => match lang {
+            Lang::En => "Installing dsh…",
+            Lang::Zh => "正在安装 dsh…",
+        },
+        Key::NoticeInstallFailed => match lang {
+            Lang::En => "Could not install dsh",
+            Lang::Zh => "安装 dsh 失败",
         },
         Key::NoticeCheckFailed => match lang {
             Lang::En => "Could not check for updates",
@@ -371,6 +389,8 @@ pub fn notice(lang: Lang, notice: Notice) -> &'static str {
             Notice::Checking => Key::ActivityChecking,
             Notice::Updating => Key::ActivityUpdatingSimple,
             Notice::Restarting => Key::ActivityRestarting,
+            Notice::Installing => Key::NoticeInstalling,
+            Notice::InstallFailed => Key::NoticeInstallFailed,
             Notice::UpdateSucceeded => Key::NoticeUpdateSucceeded,
             Notice::UpdateFailed => Key::NoticeUpdateFailed,
             Notice::CheckFailed => Key::NoticeCheckFailed,
@@ -397,6 +417,7 @@ pub fn activity(lang: Lang, activity: &Activity) -> Option<String> {
             &[("channel", channel.tag()), ("target", target)],
         )),
         Activity::Restarting => Some(t(lang, Key::ActivityRestarting).to_string()),
+        Activity::Installing { channel } => Some(fmt(lang, Key::ActivityInstalling, &[("channel", channel.tag())])),
     }
 }
 
@@ -585,6 +606,8 @@ mod tests {
                 Notice::Restarting,
                 Notice::UpdateSucceeded,
                 Notice::UpdateFailed,
+                Notice::Installing,
+                Notice::InstallFailed,
                 Notice::CheckFailed,
                 Notice::StartFailed,
                 Notice::StopFailed,

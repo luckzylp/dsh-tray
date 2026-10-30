@@ -140,7 +140,10 @@ is registered in `~/.local/share/applications` unless `--no-desktop` is passed.
 `--home DIR` targets another user's home, `--prefix DIR` sets a custom root, and
 `APPDIR` overrides the applications directory. Every replaced file is backed up
 under the hidden `<install-root>/.backups/<timestamp>/` before it is overwritten,
-so the desktop icon/assets always have a backup inside the install tree.
+so the desktop icon/assets always have a backup inside the install tree. If the
+`dsh` CLI is missing, the installer also runs
+`npm install -g @deepseek-ai/dsh@latest` with the npm it can find; pass
+`--no-dsh` to skip that step.
 
 ### macOS
 

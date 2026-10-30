@@ -30,6 +30,7 @@ TARGET_HOME=${DSH_TRAY_HOME:-${HOME:?HOME is not set}}
 PREFIX=${DSH_TRAY_PREFIX:-}
 BINARY=
 INSTALL_DESKTOP=1
+INSTALL_DSH=1
 HOME_EXPLICIT=0
 if [ -n "${DSH_TRAY_HOME:-}" ]; then
     HOME_EXPLICIT=1
@@ -63,7 +64,12 @@ Options:
   --binary PATH    dsh-tray binary to install (default: ./dsh-tray,
                    target/release/dsh-tray, or <root>/bin/dsh-tray)
   --no-desktop     only populate the install tree; skip the XDG menu entry
+  --no-dsh         do not install the dsh CLI when it is missing
   -h, --help       show this help
+
+If the dsh CLI is not installed (on PATH or in a known Node installation),
+the script runs "npm install -g @deepseek-ai/dsh@latest" with the npm it can
+find. Use --no-dsh to skip that step.
 
 Environment: DSH_TRAY_HOME, DSH_TRAY_PREFIX, APPDIR.
 Replaced files are backed up under <install-root>/.backups/<timestamp>/.
@@ -146,6 +152,10 @@ while [ "$#" -gt 0 ]; do
             ;;
         --no-desktop)
             INSTALL_DESKTOP=0
+            shift
+            ;;
+        --no-dsh)
+            INSTALL_DSH=0
             shift
             ;;
         -h|--help)
@@ -240,6 +250,56 @@ install_file() {
     chmod "$if_mode" "$if_destination"
 }
 
+# Locate an existing dsh CLI, including version-manager installs that are not
+# on a GUI session's PATH. Prints the path and returns 0 when found.
+find_dsh_cli() {
+    found=$(command -v dsh 2>/dev/null || true)
+    if [ -n "$found" ]; then
+        printf '%s\n' "$found"
+        return 0
+    fi
+    for candidate in \
+        "$HOME"/.local/share/fnm/node-versions/*/installation/bin/dsh \
+        "$HOME"/.fnm/node-versions/*/installation/bin/dsh \
+        "$HOME"/.nvm/versions/node/*/bin/dsh \
+        "$HOME"/.volta/bin/dsh \
+        "$HOME"/.asdf/installs/nodejs/*/.npm-global/bin/dsh \
+        "$HOME"/.npm-global/bin/dsh \
+        "$HOME"/.local/bin/dsh; do
+        if [ -x "$candidate" ]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Locate an npm suitable for a global install (PATH first, then known Node
+# version-manager layouts).
+find_npm_cli() {
+    found=$(command -v npm 2>/dev/null || true)
+    if [ -n "$found" ]; then
+        printf '%s\n' "$found"
+        return 0
+    fi
+    for candidate in \
+        "$HOME"/.local/share/fnm/node-versions/*/installation/bin/npm \
+        "$HOME"/.fnm/node-versions/*/installation/bin/npm \
+        "$HOME"/.nvm/versions/node/*/bin/npm \
+        "$HOME"/.volta/bin/npm \
+        "$HOME"/.asdf/installs/nodejs/*/.npm-global/bin/npm \
+        "$HOME"/.npm-global/bin/npm \
+        /usr/local/bin/npm \
+        /opt/homebrew/bin/npm \
+        /usr/bin/npm; do
+        if [ -x "$candidate" ]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
 mkdir -p "$PREFIX/bin" "$PREFIX/assets/app" "$PREFIX/assets/icons" "$PREFIX/packaging"
 
 # 1. Executable.
@@ -289,6 +349,31 @@ if [ "$INSTALL_DESKTOP" -eq 1 ]; then
     fi
 fi
 
+# 6. Ensure the dsh CLI itself is installed globally (users without dsh yet).
+DSH_STATUS=
+if [ "$INSTALL_DSH" -eq 1 ]; then
+    if dsh_path=$(find_dsh_cli); then
+        DSH_STATUS="already installed: $dsh_path"
+    else
+        npm_bin=$(find_npm_cli || true)
+        if [ -z "$npm_bin" ]; then
+            DSH_STATUS="not installed (npm not found; install Node.js or use --no-dsh)"
+            printf '\ninstall.sh: warning: dsh is not installed and npm was not found.\n' >&2
+            printf 'Install Node.js, then run: npm install -g @deepseek-ai/dsh@latest\n' >&2
+        else
+            printf '\nInstalling the dsh CLI globally: %s install -g @deepseek-ai/dsh@latest\n' "$npm_bin"
+            if "$npm_bin" install -g @deepseek-ai/dsh@latest; then
+                DSH_STATUS="installed globally with $npm_bin"
+            else
+                DSH_STATUS="global install failed; run: npm install -g @deepseek-ai/dsh@latest"
+                printf 'install.sh: warning: %s\n' "$DSH_STATUS" >&2
+            fi
+        fi
+    fi
+else
+    DSH_STATUS="skipped (--no-dsh)"
+fi
+
 printf '\nInstalled tree: %s\n' "$PREFIX"
 printf '  bin/dsh-tray\n'
 printf '  assets/app/{icon.ico,icon.png,whale.svg}\n'
@@ -304,4 +389,4 @@ if [ -n "$BACKUP_DIR" ]; then
 fi
 printf '\nRun it with:\n  %s\n' "$PREFIX/bin/dsh-tray"
 printf 'Reinstall/update with:\n  %s --binary <new-dsh-tray>\n' "$PREFIX/packaging/install.sh"
-printf '\nInstall the dsh CLI if needed: npm install -g @deepseek-ai/dsh@latest\n'
+printf '\ndsh CLI: %s\n' "$DSH_STATUS"

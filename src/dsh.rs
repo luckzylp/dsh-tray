@@ -7,6 +7,13 @@
 //! 2. dsh on PATH (on Windows dsh.cmd/dsh.exe via PATHEXT). Symlinked shims are
 //!    resolved to <npm-prefix>/.../node_modules/@deepseek-ai/dsh/lib/bin.js.
 //! 3. "npm root -g" + /@deepseek-ai/dsh (bounded spawn, never hangs).
+//! 4. Well-known Node version-manager and system global roots (fnm, nvm, volta,
+//!    asdf, pnpm, bun, /usr/local, /usr, Homebrew, Windows %APPDATA%\npm).
+//!    GUI sessions usually do not source the shell's fnm/nvm setup, so PATH is
+//!    often incomplete when the tray is started from a desktop launcher.
+//! 5. node/npm come from the discovered installation's prefix first (so the
+//!    CLI runs on the Node version it was installed for), then config, then
+//!    PATH.
 //!
 //! The version is read from the package package.json and only falls back to a
 //! bounded "--version" spawn when that file is missing or unreadable.
@@ -51,12 +58,23 @@ pub struct DshInstall {
 }
 
 impl DshInstall {
-    /// Discover the installation from config overrides + PATH + npm.
+    /// Discover the installation from config overrides, PATH, npm and known
+    /// Node version-manager installs.
     pub fn discover(config: &Config) -> Result<Self> {
-        let npm = resolve_npm(config)?;
-        let node = resolve_node(config, &npm)?;
+        // Validate explicit node/npm overrides first so a typo is reported
+        // immediately, even when the dsh package itself cannot be found.
+        if let Some(configured) = config.node_path.as_deref() {
+            if !configured.is_file() {
+                bail!("node_path {} does not exist", configured.display());
+            }
+        }
+        if let Some(configured) = config.npm_path.as_deref() {
+            if !configured.is_file() {
+                bail!("npm_path {} does not exist", configured.display());
+            }
+        }
 
-        let (package_root, bin_js) = match config.dsh_path.as_deref() {
+        let package_root = match config.dsh_path.as_deref() {
             Some(configured) => {
                 let (package_root, bin_js) = resolve_install_path(configured).ok_or_else(|| {
                     anyhow!(
@@ -73,10 +91,13 @@ impl DshInstall {
                         bin_js.display()
                     );
                 }
-                (package_root, bin_js)
+                package_root
             }
-            None => discover_on_system(&npm).ok_or_else(install_hint)?,
+            None => discover_on_system(config).ok_or_else(install_hint)?,
         };
+        let bin_js = package_root.join(BIN_REL);
+        let node = resolve_node(config, &package_root)?;
+        let npm = resolve_npm(config, &package_root)?;
 
         let version = read_package_version(&package_root)
             .or_else(|| version_from_cli(&node, &bin_js))
@@ -108,13 +129,13 @@ fn install_hint() -> anyhow::Error {
     )
 }
 
-/// Resolve npm: config override, then PATH.
-fn resolve_npm(config: &Config) -> Result<PathBuf> {
+/// Resolve npm: config override, the Node install next to dsh, then PATH.
+fn resolve_npm(config: &Config, package_root: &Path) -> Result<PathBuf> {
     if let Some(configured) = config.npm_path.as_deref() {
-        if !configured.is_file() {
-            bail!("npm_path {} does not exist", configured.display());
-        }
         return Ok(configured.to_path_buf());
+    }
+    if let Some(found) = npm_for_installation(package_root) {
+        return Ok(found);
     }
     find_in_path("npm").ok_or_else(|| {
         anyhow!(
@@ -124,13 +145,13 @@ fn resolve_npm(config: &Config) -> Result<PathBuf> {
     })
 }
 
-/// Resolve node: config override, PATH, then (Windows) the npm sibling.
-fn resolve_node(config: &Config, _npm: &Path) -> Result<PathBuf> {
+/// Resolve node: config override, the Node install next to dsh, then PATH.
+fn resolve_node(config: &Config, package_root: &Path) -> Result<PathBuf> {
     if let Some(configured) = config.node_path.as_deref() {
-        if !configured.is_file() {
-            bail!("node_path {} does not exist", configured.display());
-        }
         return Ok(configured.to_path_buf());
+    }
+    if let Some(found) = node_for_installation(package_root) {
+        return Ok(found);
     }
     if let Some(found) = find_in_path("node") {
         return Ok(found);
@@ -138,11 +159,13 @@ fn resolve_node(config: &Config, _npm: &Path) -> Result<PathBuf> {
     #[cfg(windows)]
     {
         // Node.js ships node.exe next to npm.cmd in the same installation dir.
-        if let Some(dir) = _npm.parent() {
-            for name in ["node.exe", "node"] {
-                let candidate = dir.join(name);
-                if candidate.is_file() {
-                    return Ok(candidate);
+        if let Some(npm) = npm_for_installation(package_root).or_else(|| find_in_path("npm")) {
+            if let Some(dir) = npm.parent() {
+                for name in ["node.exe", "node"] {
+                    let candidate = dir.join(name);
+                    if candidate.is_file() {
+                        return Ok(candidate);
+                    }
                 }
             }
         }
@@ -153,12 +176,13 @@ fn resolve_node(config: &Config, _npm: &Path) -> Result<PathBuf> {
     )
 }
 
-/// Discovery when no override is configured: PATH shim, then the npm global root.
-fn discover_on_system(npm: &Path) -> Option<(PathBuf, PathBuf)> {
+/// Discovery when no override is configured: PATH shim, npm's global root, then
+/// the well-known version-manager/system locations.
+fn discover_on_system(config: &Config) -> Option<PathBuf> {
     if let Some(shim) = find_in_path("dsh") {
         if let Some((package_root, bin_js)) = resolve_install_path(&shim) {
             if bin_js.is_file() {
-                return Some((package_root, bin_js));
+                return Some(package_root);
             }
         }
         crate::logging::warn(format!(
@@ -166,11 +190,18 @@ fn discover_on_system(npm: &Path) -> Option<(PathBuf, PathBuf)> {
             shim.display()
         ));
     }
-    npm_global_install(npm)
+
+    if let Some(npm) = config.npm_path.clone().or_else(|| find_in_path("npm")) {
+        if let Some(package_root) = npm_global_install(&npm) {
+            return Some(package_root);
+        }
+    }
+
+    best_known_installation()
 }
 
 /// Ask npm where global packages live and look for dsh there.
-fn npm_global_install(npm: &Path) -> Option<(PathBuf, PathBuf)> {
+fn npm_global_install(npm: &Path) -> Option<PathBuf> {
     let captured = match run_with_timeout(npm, ["root", "-g"], NPM_ROOT_TIMEOUT) {
         Ok(captured) => captured,
         Err(error) => {
@@ -188,8 +219,257 @@ fn npm_global_install(npm: &Path) -> Option<(PathBuf, PathBuf)> {
     }
     let root_dir = captured.stdout.lines().map(str::trim).find(|line| !line.is_empty())?;
     let package_root = PathBuf::from(root_dir).join(crate::DSH_PACKAGE);
-    let bin_js = package_root.join(BIN_REL);
-    bin_js.is_file().then_some((package_root, bin_js))
+    package_root.join(BIN_REL).is_file().then_some(package_root)
+}
+
+/// Return the Node installation prefix that owns a global npm package:
+/// <prefix>/lib/node_modules/@scope/pkg (Unix) or <prefix>/node_modules/@scope/pkg.
+fn installation_prefix(package_root: &Path) -> Option<PathBuf> {
+    let modules = package_root.parent()?.parent()?;
+    if modules.file_name()? != "node_modules" {
+        return None;
+    }
+    let parent = modules.parent()?;
+    if parent.file_name()? == "lib" {
+        parent.parent().map(Path::to_path_buf)
+    } else {
+        Some(parent.to_path_buf())
+    }
+}
+
+fn node_for_installation(package_root: &Path) -> Option<PathBuf> {
+    let prefix = installation_prefix(package_root)?;
+    #[cfg(unix)]
+    {
+        let candidate = prefix.join("bin/node");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    #[cfg(windows)]
+    {
+        for candidate in [prefix.join("node.exe"), prefix.join("bin/node.exe")] {
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+fn npm_for_installation(package_root: &Path) -> Option<PathBuf> {
+    let prefix = installation_prefix(package_root)?;
+    #[cfg(unix)]
+    {
+        for candidate in [prefix.join("bin/npm"), prefix.join("npm")] {
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    #[cfg(windows)]
+    {
+        for candidate in [prefix.join("npm.cmd"), prefix.join("npm.exe"), prefix.join("npm")] {
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+/// Best dsh package found under known per-user Node installations.
+fn best_known_installation() -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(home) = home_dir() {
+        collect_known_for_home(&home, &mut candidates);
+    }
+    collect_system_installations(&mut candidates);
+    let best = pick_newest_installation(candidates);
+    if let Some(package_root) = &best {
+        crate::logging::info(format!(
+            "found dsh via a local Node installation: {}",
+            package_root.display()
+        ));
+    }
+    best
+}
+
+fn home_dir() -> Option<PathBuf> {
+    let variable = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    std::env::var_os(variable).map(PathBuf::from)
+}
+
+/// Candidate dsh package roots for one user's home (fnm/nvm/volta/asdf/pnpm/bun
+/// and user-level npm prefixes).
+fn known_installation_candidates(home: &Path) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    collect_known_for_home(home, &mut candidates);
+    candidates.sort();
+    candidates.dedup();
+    candidates
+}
+
+fn collect_known_for_home(home: &Path, out: &mut Vec<PathBuf>) {
+    // fnm (Linux/macOS and Windows layouts).
+    for base in [
+        home.join(".local/share/fnm/node-versions"),
+        home.join(".fnm/node-versions"),
+    ] {
+        collect_versioned(&base, &["installation", "lib", "node_modules"], out);
+        collect_versioned(&base, &["installation", "node_modules"], out);
+    }
+    // nvm, volta, asdf, pnpm, bun.
+    collect_versioned(&home.join(".nvm/versions/node"), &["lib", "node_modules"], out);
+    collect_versioned(&home.join(".volta/tools/image/node"), &["lib", "node_modules"], out);
+    collect_versioned(
+        &home.join(".asdf/installs/nodejs"),
+        &[".npm-global", "lib", "node_modules"],
+        out,
+    );
+    collect_versioned(&home.join(".local/share/pnpm/global"), &["node_modules"], out);
+    collect_versioned(&home.join("AppData/Local/pnpm/global"), &["node_modules"], out);
+    collect_versioned(&home.join("AppData/Roaming/nvm"), &["node_modules"], out);
+    add_installation(&home.join(".bun/install/global/node_modules"), out);
+    add_installation(&home.join(".npm-global/lib/node_modules"), out);
+    add_installation(&home.join("AppData/Roaming/npm/node_modules"), out);
+}
+
+fn collect_system_installations(out: &mut Vec<PathBuf>) {
+    #[cfg(unix)]
+    {
+        for modules in [
+            "/usr/local/lib/node_modules",
+            "/usr/lib/node_modules",
+            "/opt/homebrew/lib/node_modules",
+            "/opt/local/lib/node_modules",
+        ] {
+            add_installation(Path::new(modules), out);
+        }
+    }
+    #[cfg(windows)]
+    {
+        for variable in ["ProgramFiles", "ProgramFiles(x86)"] {
+            if let Some(prefix) = std::env::var_os(variable) {
+                add_installation(&Path::new(&prefix).join("nodejs").join("node_modules"), out);
+            }
+        }
+    }
+}
+
+fn collect_versioned(base: &Path, rest: &[&str], out: &mut Vec<PathBuf>) {
+    let Ok(entries) = fs::read_dir(base) else { return };
+    for entry in entries.flatten() {
+        let mut modules = entry.path();
+        for part in rest {
+            modules.push(part);
+        }
+        add_installation(&modules, out);
+    }
+}
+
+fn add_installation(node_modules: &Path, out: &mut Vec<PathBuf>) {
+    let package_root = node_modules.join(crate::DSH_PACKAGE);
+    if package_root.join(BIN_REL).is_file() {
+        out.push(package_root);
+    }
+}
+
+fn installation_version_rank(package_root: &Path) -> Option<Version> {
+    read_package_version(package_root).and_then(|version| parse_version_lenient(&version))
+}
+
+fn pick_newest_installation(mut candidates: Vec<PathBuf>) -> Option<PathBuf> {
+    candidates.sort();
+    candidates.dedup();
+    candidates
+        .into_iter()
+        .max_by_key(|package_root| installation_version_rank(package_root))
+}
+
+/// Find a usable npm from well-known Node installations when PATH does not
+/// include the version manager (common for applications started by the desktop).
+pub(crate) fn find_known_npm() -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(home) = home_dir() {
+        known_npm_candidates(&home, &mut candidates);
+    }
+    #[cfg(unix)]
+    {
+        for candidate in ["/usr/local/bin/npm", "/opt/homebrew/bin/npm", "/usr/bin/npm"] {
+            let path = Path::new(candidate);
+            if path.is_file() {
+                candidates.push(path.to_path_buf());
+            }
+        }
+    }
+    #[cfg(windows)]
+    {
+        for variable in ["ProgramFiles", "ProgramFiles(x86)"] {
+            if let Some(prefix) = std::env::var_os(variable) {
+                let candidate = Path::new(&prefix).join("nodejs").join("npm.cmd");
+                if candidate.is_file() {
+                    candidates.push(candidate);
+                }
+            }
+        }
+    }
+    candidates.into_iter().max_by_key(|npm| npm_version_rank(npm))
+}
+
+fn known_npm_candidates(home: &Path, out: &mut Vec<PathBuf>) {
+    for base in [
+        home.join(".local/share/fnm/node-versions"),
+        home.join(".fnm/node-versions"),
+    ] {
+        #[cfg(unix)]
+        collect_versioned_file(&base, &["installation", "bin", "npm"], out);
+        #[cfg(windows)]
+        {
+            collect_versioned_file(&base, &["installation", "npm.cmd"], out);
+            collect_versioned_file(&base, &["installation", "bin", "npm.cmd"], out);
+        }
+    }
+    #[cfg(unix)]
+    {
+        collect_versioned_file(&home.join(".nvm/versions/node"), &["bin", "npm"], out);
+        collect_versioned_file(&home.join(".volta/tools/image/node"), &["bin", "npm"], out);
+        collect_versioned_file(&home.join(".asdf/installs/nodejs"), &[".npm-global", "bin", "npm"], out);
+        add_npm_path(&home.join(".npm-global/bin/npm"), out);
+        add_npm_path(&home.join(".local/bin/npm"), out);
+    }
+    #[cfg(windows)]
+    {
+        collect_versioned_file(&home.join("AppData/Roaming/nvm"), &["npm.cmd"], out);
+        collect_versioned_file(&home.join("AppData/Local/fnm/node-versions"), &["npm.cmd"], out);
+        add_npm_path(&home.join("AppData/Roaming/npm/npm.cmd"), out);
+    }
+}
+
+fn collect_versioned_file(base: &Path, rest: &[&str], out: &mut Vec<PathBuf>) {
+    let Ok(entries) = fs::read_dir(base) else { return };
+    for entry in entries.flatten() {
+        let mut path = entry.path();
+        for part in rest {
+            path.push(part);
+        }
+        if path.is_file() {
+            out.push(path);
+        }
+    }
+}
+
+fn add_npm_path(path: &Path, out: &mut Vec<PathBuf>) {
+    if path.is_file() {
+        out.push(path.to_path_buf());
+    }
+}
+
+fn npm_version_rank(npm: &Path) -> Option<Version> {
+    npm.ancestors()
+        .filter_map(|ancestor| ancestor.file_name()?.to_str())
+        .filter_map(parse_version_lenient)
+        .max()
 }
 
 /// Normalise anything that points at a dsh installation into (package_root, bin_js).
@@ -555,6 +835,19 @@ mod tests {
             .collect()
     }
 
+    /// Create a fake global package below the given node_modules directory.
+    fn fake_package(node_modules: &Path, version: &str) -> PathBuf {
+        let package_root = node_modules.join(crate::DSH_PACKAGE);
+        fs::create_dir_all(package_root.join("lib")).expect("mkdir");
+        fs::write(package_root.join("lib/bin.js"), b"// entry\n").expect("bin.js");
+        fs::write(
+            package_root.join("package.json"),
+            format!(r#"{{"name":"{}","version":"{version}"}}"#, crate::DSH_PACKAGE),
+        )
+        .expect("package.json");
+        package_root
+    }
+
     #[test]
     fn find_in_path_respects_order() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -723,6 +1016,83 @@ mod tests {
         };
         let error = DshInstall::discover(&config).expect_err("must fail");
         assert!(format!("{error}").contains("node_path"), "{error}");
+    }
+
+    #[test]
+    fn installation_prefix_handles_unix_and_windows_layouts() {
+        assert_eq!(
+            installation_prefix(Path::new("/usr/local/lib/node_modules/@deepseek-ai/dsh")),
+            Some(PathBuf::from("/usr/local"))
+        );
+        assert_eq!(
+            installation_prefix(Path::new("/home/u/AppData/Roaming/npm/node_modules/@deepseek-ai/dsh")),
+            Some(PathBuf::from("/home/u/AppData/Roaming/npm"))
+        );
+        assert_eq!(installation_prefix(Path::new("/tmp/not-a-global-package")), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn node_and_npm_are_taken_from_the_install_prefix() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let prefix = dir.path().join("node-v26");
+        let package_root = fake_package(&prefix.join("lib/node_modules"), "0.2.1-rc.5");
+        fs::create_dir_all(prefix.join("bin")).expect("mkdir bin");
+        make_executable(&prefix.join("bin/node"));
+        make_executable(&prefix.join("bin/npm"));
+
+        let config = Config {
+            dsh_path: Some(package_root.join("lib/bin.js")),
+            ..Config::default()
+        };
+        let install = DshInstall::discover(&config).expect("discover");
+        assert_eq!(install.node, prefix.join("bin/node"));
+        assert_eq!(install.npm, prefix.join("bin/npm"));
+    }
+
+    #[test]
+    fn known_candidates_cover_fnm_and_nvm_layouts() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let home = dir.path();
+        let fnm = fake_package(
+            &home.join(".local/share/fnm/node-versions/v26.4.0/installation/lib/node_modules"),
+            "0.2.1-rc.5",
+        );
+        let nvm = fake_package(&home.join(".nvm/versions/node/v22.0.0/lib/node_modules"), "0.2.1-rc.5");
+        let candidates = known_installation_candidates(home);
+        assert!(candidates.contains(&fnm), "fnm package missing: {candidates:?}");
+        assert!(candidates.contains(&nvm), "nvm package missing: {candidates:?}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn known_npm_candidates_include_fnm_npm() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let home = dir.path();
+        let npm = home.join(".local/share/fnm/node-versions/v26.4.0/installation/bin/npm");
+        fs::create_dir_all(npm.parent().expect("parent")).expect("mkdir");
+        make_executable(&npm);
+        let mut candidates = Vec::new();
+        known_npm_candidates(home, &mut candidates);
+        assert!(candidates.contains(&npm), "{candidates:?}");
+        assert_eq!(npm_version_rank(&npm), Some(Version::parse("26.4.0").expect("version")));
+    }
+
+    #[test]
+    fn newest_known_installation_wins() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let home = dir.path();
+        let older = fake_package(
+            &home.join(".local/share/fnm/node-versions/v24.0.0/installation/lib/node_modules"),
+            "0.2.1",
+        );
+        let newer = fake_package(
+            &home.join(".local/share/fnm/node-versions/v26.4.0/installation/lib/node_modules"),
+            "0.3.0",
+        );
+        let candidates = known_installation_candidates(home);
+        assert_eq!(pick_newest_installation(candidates.clone()), Some(newer.clone()));
+        assert_ne!(pick_newest_installation(candidates), Some(older));
     }
 
     #[cfg(unix)]

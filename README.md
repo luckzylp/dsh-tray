@@ -191,12 +191,14 @@ to keep the install tree only. Use `--home DIR` to install for another user's
 home, `--prefix DIR` for a custom root, and `APPDIR` to override the
 applications directory. Replaced files are backed up under the hidden
 `~/.local/dsh-tray/.backups/<timestamp>/`, so the desktop icon/assets always
-have a backup inside that tree. The launcher uses absolute paths, so the
-directory does not need to be on `PATH`.
+have a backup inside that tree. If the `dsh` CLI is missing, the installer also
+runs `npm install -g @deepseek-ai/dsh@latest` (skip with `--no-dsh`). The
+launcher uses absolute paths, so the directory does not need to be on `PATH`.
 
 ## Quick start
 
-1. Install the `dsh` CLI if you have not already:
+1. Install the `dsh` CLI if you have not already (the installer and the tray
+   can also do this globally for you):
 
    ```bash
    npm install -g @deepseek-ai/dsh@latest
@@ -336,9 +338,16 @@ versions from the npm registry's dist-tags.
   when the target tag points at a different version; the managed process is
   restarted afterwards when it was running.
 - **Checking for updates** — fetches dist-tags and compares versions with semver.
+- **Installing** — if dsh is missing, pressing **Start DSH** (or starting the
+  tray with `start_dsh_on_launch`) runs `npm install -g
+  @deepseek-ai/dsh@<channel>` first, then starts the service. The installer also
+  does this when dsh is absent (`--no-dsh` opts out).
 - **Updating** — stops a managed child first, runs
   `npm install -g @deepseek-ai/dsh@<tag>`, re-reads the installed version, and
-  restarts the child if it was running.
+  restarts the child if it was running. Both install and update use the npm
+  that belongs to the Node installation containing dsh; discovery also finds
+  fnm/nvm/volta/asdf/pnpm/bun and system global installs when a GUI session's
+  PATH is incomplete.
 - **Failures** — shown in the tray header and written to the log. npm permission
   errors are reported verbatim with a hint about the global prefix.
 
@@ -394,15 +403,20 @@ npm registry requests when diagnosing an offline machine.
 
 ### The tray says dsh is not installed
 
-Install the CLI globally and make sure it is on `PATH`:
+When you press **Start DSH**, the tray automatically runs
+`npm install -g @deepseek-ai/dsh@latest` if no installation can be found, then
+starts the service. `packaging/install.sh` does the same during installation
+(unless `--no-dsh` is given). You can also install it manually:
 
 ```bash
 npm install -g @deepseek-ai/dsh@latest
 dsh --version
 ```
 
-If `dsh` lives in a non-standard prefix, set `dsh_path` (and optionally
-`node_path` / `npm_path`) in `config.json`.
+If automatic installation fails, check the log for npm's error (usually a
+permission problem with the global npm prefix). If `dsh` lives in a
+non-standard prefix, set `dsh_path` (and optionally `node_path` / `npm_path`) in
+`config.json`.
 
 ### npm fails with EACCES / permission errors
 

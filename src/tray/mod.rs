@@ -64,6 +64,7 @@ pub fn icon_kind(snapshot: &Snapshot) -> IconKind {
                 | Notice::StopFailed
                 | Notice::StartupTimedOut
                 | Notice::UpdateFailed
+                | Notice::InstallFailed
                 | Notice::ConfigFailed
                 | Notice::AutostartFailed
         )

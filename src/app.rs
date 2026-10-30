@@ -98,6 +98,12 @@ pub enum WorkerEvent {
         channel: Channel,
         was_running: bool,
     },
+    /// npm global install of a missing dsh finished; the service may then start.
+    InstallFinished {
+        result: Result<UpdateOutcome, String>,
+        channel: Channel,
+        open_browser: bool,
+    },
 }
 
 /// Messages processed by the controller loop.
@@ -135,6 +141,7 @@ pub enum Activity {
     Idle,
     Checking,
     Updating { channel: Channel, target: String },
+    Installing { channel: Channel },
     Restarting,
 }
 
@@ -154,6 +161,8 @@ pub enum Notice {
     Restarting,
     UpdateSucceeded,
     UpdateFailed,
+    Installing,
+    InstallFailed,
     CheckFailed,
     StartFailed,
     StopFailed,
@@ -320,7 +329,8 @@ impl Controller {
     }
 
     fn activity_blocks_service(&self) -> bool {
-        matches!(self.activity, Activity::Updating { .. }) || matches!(self.state, ServiceState::Stopping)
+        matches!(self.activity, Activity::Updating { .. } | Activity::Installing { .. })
+            || matches!(self.state, ServiceState::Stopping)
     }
 
     fn publish(&self) {
@@ -401,7 +411,18 @@ impl Controller {
                 self.detail = Some(error.to_string());
             }
         }
-        match NpmClient::discover(&self.config) {
+
+        // Use the npm that belongs to dsh's own Node installation, so updates
+        // and first-time installs target the same global prefix. Fall back to
+        // PATH/known-npm discovery when dsh is missing.
+        let npm = match self.dsh.as_ref() {
+            Some(install) => NpmClient::discover_with_program(&self.config, install.npm.clone()).or_else(|error| {
+                logging::warn(format!("could not use dsh's npm ({}): {error}", install.npm.display()));
+                NpmClient::discover(&self.config)
+            }),
+            None => NpmClient::discover(&self.config),
+        };
+        match npm {
             Ok(npm) => {
                 logging::info(format!("npm {} (registry {})", npm.program.display(), npm.registry));
                 self.npm = Some(npm);
@@ -578,13 +599,8 @@ impl Controller {
             return;
         }
         let Some(install) = self.dsh.clone() else {
-            self.notice = Some(Notice::StartFailed);
-            self.detail = Some(match &self.npm_error {
-                Some(error) => format!("dsh is not installed: {error}"),
-                None => "dsh is not installed; run: npm install -g @deepseek-ai/dsh@latest".to_string(),
-            });
-            logging::error("cannot start dsh: not installed");
-            self.publish();
+            // No dsh yet: install it globally with npm, then start it.
+            self.begin_install(open_browser);
             return;
         };
         let options = SpawnOptions {
@@ -625,6 +641,68 @@ impl Controller {
                 self.write_runtime();
                 self.publish();
             }
+        }
+    }
+
+    /// Globally install dsh (current channel) and start it afterwards.
+    fn begin_install(&mut self, open_browser: bool) {
+        if !self.activity.is_idle() {
+            return;
+        }
+        let npm = match self.npm.clone() {
+            Some(npm) => npm,
+            None => match NpmClient::discover(&self.config) {
+                Ok(npm) => {
+                    self.npm = Some(npm.clone());
+                    self.npm_error = None;
+                    npm
+                }
+                Err(error) => {
+                    self.npm_error = Some(error.to_string());
+                    self.notice = Some(Notice::InstallFailed);
+                    self.detail = Some(format!("npm is not available: {error}"));
+                    logging::error("cannot install dsh: npm is not available");
+                    self.publish();
+                    return;
+                }
+            },
+        };
+        let channel = self.config.channel;
+        logging::info(format!(
+            "dsh is not installed; installing {}@{} globally",
+            crate::DSH_PACKAGE,
+            channel.tag()
+        ));
+        self.activity = Activity::Installing { channel };
+        self.notice = Some(Notice::Installing);
+        self.detail = None;
+        self.publish();
+
+        let config = self.config.clone();
+        let tx = self.tx.clone();
+        let spawned = thread::Builder::new().name("npm-install-dsh".into()).spawn(move || {
+            let mut logger = |line: &str| logging::info(format!("npm: {line}"));
+            let result = match npm.install(channel, &mut logger) {
+                Ok(()) => DshInstall::discover(&config)
+                    .map(|install| {
+                        let version = install.version.clone();
+                        UpdateOutcome { version, install }
+                    })
+                    .map_err(|error| error.to_string()),
+                Err(error) => Err(error.to_string()),
+            };
+            let _ = tx.send(Message::Worker(WorkerEvent::InstallFinished {
+                result,
+                channel,
+                open_browser,
+            }));
+        });
+        if let Err(error) = spawned {
+            logging::error(format!("could not spawn install thread: {error}"));
+            self.activity = Activity::Idle;
+            self.notice = Some(Notice::InstallFailed);
+            self.detail = Some(error.to_string());
+            self.publish();
         }
     }
 
@@ -908,6 +986,11 @@ impl Controller {
                 channel,
                 was_running,
             } => self.handle_update_finished(result, channel, was_running),
+            WorkerEvent::InstallFinished {
+                result,
+                channel,
+                open_browser,
+            } => self.handle_install_finished(result, channel, open_browser),
         }
     }
 
@@ -1109,6 +1192,39 @@ impl Controller {
             self.config.channel = detected;
             self.save_config();
             self.recompute_update_available();
+        }
+    }
+
+    fn handle_install_finished(&mut self, result: Result<UpdateOutcome, String>, channel: Channel, open_browser: bool) {
+        match result {
+            Ok(outcome) => {
+                logging::info(format!(
+                    "installed {}@{} globally at {}",
+                    crate::DSH_PACKAGE,
+                    outcome.version,
+                    outcome.install.bin_js.display()
+                ));
+                self.dsh = Some(outcome.install.clone());
+                self.config.channel = channel;
+                self.channel_adopted = true;
+                self.save_config();
+                if let Ok(npm) = NpmClient::discover_with_program(&self.config, outcome.install.npm.clone()) {
+                    self.npm = Some(npm);
+                    self.npm_error = None;
+                }
+                self.activity = Activity::Idle;
+                self.clear_notice();
+                self.recompute_update_available();
+                self.publish();
+                self.start_dsh(open_browser);
+            }
+            Err(error) => {
+                logging::error(format!("could not install dsh globally: {error}"));
+                self.activity = Activity::Idle;
+                self.notice = Some(Notice::InstallFailed);
+                self.detail = Some(error);
+                self.publish();
+            }
         }
     }
 
