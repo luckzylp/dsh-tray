@@ -1,0 +1,14 @@
+# Rust build output
+/target/
+/.probe/
+/.build/
+**/*.rs.bk
+
+# local tooling / caches
+/.cargo-home/
+/.dsh-tray-home/
+*.log
+
+# OS noise
+.DS_Store
+Thumbs.db
