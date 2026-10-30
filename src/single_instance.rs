@@ -70,7 +70,7 @@ mod tests {
         let state = RuntimeState {
             pid: 1234,
             url: Some("http://127.0.0.1:46085/?token=secret".into()),
-            tray_version: "0.1.0".into(),
+            tray_version: crate::VERSION.to_string(),
             started_at: "2026-01-01T00:00:00+08:00".into(),
         };
         write_runtime(&path, &state).unwrap();

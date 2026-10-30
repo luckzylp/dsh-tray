@@ -93,9 +93,8 @@ Release 上（请使用托管此代码仓库的项目的 Releases 页面；本�
 | Linux x86_64 | `dsh-tray-linux-x86_64.tar.gz` |
 | Linux aarch64 | `dsh-tray-linux-aarch64.tar.gz` |
 | Windows x86_64 | `dsh-tray-windows-x86_64.zip` |
-| macOS x86_64 | `dsh-tray-macos-x86_64.tar.gz` |
 | macOS Apple Silicon | `dsh-tray-macos-aarch64.tar.gz` |
-| macOS 应用包 | `DSH-Tray-macos-<arch>.app.tar.gz` |
+| macOS 应用包 | `DSH-Tray-macos-aarch64.app.tar.gz` |
 | 校验和 | `checksums.txt`（SHA-256，每个产物一行） |
 
 压缩包中包含可执行文件、`LICENSE`、`README.md` 和 `README.zh-CN.md`。
@@ -481,7 +480,7 @@ cargo test --all-targets
 CI（`.github/workflows/ci.yml`）在 Linux 上运行 rustfmt 和 clippy，并在 Linux、
 macOS 和 Windows 上运行测试套件。发布工作流
 （`.github/workflows/release.yml`）构建原生的 Linux（x86_64、aarch64）、Windows 和
-macOS（Intel、Apple Silicon）产物，把 macOS 构建包装成 `DSH Tray.app` 应用包，生成
+macOS Apple Silicon 产物，把 macOS 构建包装成 `DSH Tray.app` 应用包，生成
 SHA-256 校验和，并把所有内容附加到带标签的 GitHub Release。产物布局和版本号更新
 清单见 [docs/PACKAGING.md](docs/PACKAGING.md)。
 

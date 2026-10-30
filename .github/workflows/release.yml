@@ -39,11 +39,6 @@ jobs:
             platform: windows
             arch: x86_64
             artifact: dsh-tray-windows-x86_64.zip
-          - name: macos-x86_64
-            os: macos-13
-            platform: macos
-            arch: x86_64
-            artifact: dsh-tray-macos-x86_64.tar.gz
           - name: macos-aarch64
             os: macos-14
             platform: macos

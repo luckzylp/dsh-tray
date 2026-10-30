@@ -14,9 +14,8 @@ the GitHub Release for that tag:
 | Linux x86_64 | `ubuntu-latest` | `dsh-tray-linux-x86_64.tar.gz` | binary, `LICENSE`, `README.md`, `README.zh-CN.md` |
 | Linux aarch64 | `ubuntu-24.04-arm` | `dsh-tray-linux-aarch64.tar.gz` | same layout |
 | Windows x86_64 | `windows-latest` | `dsh-tray-windows-x86_64.zip` | `dsh-tray.exe` (blue whale icon embedded by `build.rs`), `LICENSE`, `README.md`, `README.zh-CN.md` |
-| macOS x86_64 | `macos-13` | `dsh-tray-macos-x86_64.tar.gz` | same layout as Linux |
 | macOS aarch64 | `macos-14` | `dsh-tray-macos-aarch64.tar.gz` | same layout as Linux |
-| macOS bundle | `macos-13` / `macos-14` | `DSH-Tray-macos-<arch>.app.tar.gz` | `DSH Tray.app` bundle |
+| macOS bundle | `macos-14` | `DSH-Tray-macos-aarch64.app.tar.gz` | `DSH Tray.app` bundle |
 | All | — | `checksums.txt` | SHA-256, one line per artifact |
 
 Artifacts are built **natively** on each runner (no cross-compilation): the GUI
@@ -109,7 +108,7 @@ convert it.
 The workflow prints
 `/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString"` as a sanity
 check before packing the bundle into
-`DSH-Tray-macos-<arch>.app.tar.gz`.
+`DSH-Tray-macos-aarch64.app.tar.gz`.
 
 ## Manual local packaging
 
@@ -184,17 +183,18 @@ Get-FileHash dsh-tray-windows-x86_64.zip -Algorithm SHA256
 5. Commit the bump, then tag and push:
 
    ```bash
-   git tag -a v0.2.0 -m "dsh-tray 0.2.0"
-   git push origin v0.2.0
+   git tag -a v0.3.0 -m "dsh-tray 0.3.0"
+   git push origin v0.3.0
    ```
 
-6. Watch the release workflow: all five build jobs must succeed and the `release`
-   job must attach exactly the artifacts listed above.
+6. Watch the release workflow: all four build jobs (Linux x86_64/aarch64,
+   Windows, macOS aarch64) must succeed and the `release` job must attach exactly
+   the artifacts listed above.
 7. Verify the release: download each artifact, check `checksums.txt` with
    `sha256sum -c checksums.txt` (or `shasum -a 256 -c`), and smoke-test at least
    one binary (`dsh-tray --version`, `dsh-tray --check`).
 
-The tag name (`v0.2.0`) and the Cargo version (`0.2.0`) should match; the
+The tag name (`v0.3.0`) and the Cargo version (`0.3.0`) should match; the
 workflow uses `github.ref_name` for the release title and does not derive the
 version from the tag, so a mismatch would produce confusing artifact metadata.
 

@@ -102,9 +102,8 @@ repository that hosts this checkout; this README does not hard-code a URL):
 | Linux x86_64 | `dsh-tray-linux-x86_64.tar.gz` |
 | Linux aarch64 | `dsh-tray-linux-aarch64.tar.gz` |
 | Windows x86_64 | `dsh-tray-windows-x86_64.zip` |
-| macOS x86_64 | `dsh-tray-macos-x86_64.tar.gz` |
 | macOS Apple Silicon | `dsh-tray-macos-aarch64.tar.gz` |
-| macOS application bundle | `DSH-Tray-macos-<arch>.app.tar.gz` |
+| macOS application bundle | `DSH-Tray-macos-aarch64.app.tar.gz` |
 | Checksums | `checksums.txt` (SHA-256, one line per artifact) |
 
 The tarballs and the zip contain the binary, `LICENSE`, `README.md` and
@@ -518,7 +517,7 @@ cargo test --all-targets
 CI (`.github/workflows/ci.yml`) runs rustfmt and clippy on Linux and the test
 suite on Linux, macOS and Windows. The release workflow
 (`.github/workflows/release.yml`) builds native Linux (x86_64, aarch64), Windows
-and macOS (Intel, Apple Silicon) artifacts, wraps the macOS build in a
+and macOS Apple Silicon artifacts, wraps the macOS build in a
 `DSH Tray.app` bundle, writes SHA-256 checksums and attaches everything to the
 tagged GitHub Release. See [docs/PACKAGING.md](docs/PACKAGING.md) for the
 artifact layout and the version-bump checklist.
