@@ -13,7 +13,7 @@ the GitHub Release for that tag:
 | --- | --- | --- | --- |
 | Linux x86_64 | `ubuntu-latest` | `dsh-tray-linux-x86_64.tar.gz` | binary, `LICENSE`, `README.md`, `README.zh-CN.md` |
 | Linux aarch64 | `ubuntu-24.04-arm` | `dsh-tray-linux-aarch64.tar.gz` | same layout |
-| Windows x86_64 | `windows-latest` | `dsh-tray-windows-x86_64.zip` | `dsh-tray.exe`, `LICENSE`, `README.md`, `README.zh-CN.md` |
+| Windows x86_64 | `windows-latest` | `dsh-tray-windows-x86_64.zip` | `dsh-tray.exe` (blue whale icon embedded by `build.rs`), `LICENSE`, `README.md`, `README.zh-CN.md` |
 | macOS x86_64 | `macos-13` | `dsh-tray-macos-x86_64.tar.gz` | same layout as Linux |
 | macOS aarch64 | `macos-14` | `dsh-tray-macos-aarch64.tar.gz` | same layout as Linux |
 | macOS bundle | `macos-13` / `macos-14` | `DSH-Tray-macos-<arch>.app.tar.gz` | `DSH Tray.app` bundle |
@@ -246,14 +246,20 @@ which is useful for portable packaging and tests.
 ## Icons
 
 - `scripts/gen-icons.py` regenerates the committed assets under `assets/`
-  (requires Pillow). The official DeepSeek whale sources are
-  `assets/icons/whale-base-32.png` (silhouette mask) and
-  `assets/app/icon-source.png` (application icon). Outputs:
-  `assets/icons/tray-{stopped,running,error}.png` and their `@2x` versions,
-  plus `assets/app/icon.png` and `assets/app/icon.ico`.
+  (requires Pillow; the application icon additionally needs Python GI Rsvg and
+  pycairo). The official DeepSeek whale sources are
+  `assets/icons/whale-base-32.png` (silhouette mask for the state-coloured tray
+  icons) and `assets/app/whale.svg` (the blue `#4D6BFE` application-icon logo).
+  Outputs: `assets/icons/tray-{stopped,running,error}.png` and their `@2x`
+  versions, plus `assets/app/icon.png` (1024px blue whale) and
+  `assets/app/icon.ico`.
 - Tray state colours: gray = stopped/starting, green = running, red = failed
   start/stop/update, startup timeout, config/autostart error or unexpected
   child exit.
+- `build.rs` embeds `assets/app/icon.ico` into native Windows executables via
+  the `winresource` build dependency, so Explorer/taskbar shortcuts show the
+  blue whale. Linux uses the installed `.desktop` icon and macOS uses the
+  `.apps` bundle icon generated from `assets/app/icon.png`.
 - `scripts/make-macos-icns.sh` builds `build/AppIcon.icns` from
   `assets/app/icon.png` on macOS.
 

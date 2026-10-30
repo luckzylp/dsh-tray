@@ -463,11 +463,12 @@ SHA-256 校验和，并把所有内容附加到带标签的 GitHub Release。产
 图标：
 
 托盘图标使用 DeepSeek 鲸鱼，并按状态重新着色（灰色 = 停止，绿色 = 运行中，红色 =
-异常）。官方鲸鱼蒙版和应用图标已提交在 `assets/` 下，状态变体由它们生成：
+异常）。应用/桌面图标使用同一款 DeepSeek 官方蓝色鲸鱼（`#4D6BFE`），源文件为
+`assets/app/whale.svg`。鲸鱼蒙版、SVG 和生成后的图标都已提交在 `assets/` 下：
 
 ```bash
-python3 scripts/gen-icons.py                # 需要 Pillow；重新生成已提交的图标资源
-scripts/make-macos-icns.sh                  # 仅限 macOS；输出 build/AppIcon.icns
+python3 scripts/gen-icons.py   # 需要 Pillow；应用图标另需 GI Rsvg/pycairo
+scripts/make-macos-icns.sh     # 仅限 macOS；输出 build/AppIcon.icns
 ```
 
 仓库结构：

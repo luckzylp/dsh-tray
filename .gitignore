@@ -15,3 +15,7 @@
 .DS_Store
 Thumbs.db
 .team/
+
+# Python bytecode (scripts/gen-icons.py)
+__pycache__/
+*.pyc

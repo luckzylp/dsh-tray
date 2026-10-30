@@ -497,12 +497,13 @@ artifact layout and the version-bump checklist.
 Icons:
 
 The tray icon is the DeepSeek whale, recoloured per state (gray = stopped,
-green = running, red = error). The official whale mask and application icon are
-committed under `assets/`; the state variants are generated from them:
+green = running, red = error). The application/desktop icon uses the same
+official blue whale (`#4D6BFE`) from `assets/app/whale.svg`. The whale mask,
+SVG and generated icons are committed under `assets/`:
 
 ```bash
-python3 scripts/gen-icons.py                # needs Pillow; regenerates committed assets
-scripts/make-macos-icns.sh                  # macOS only; writes build/AppIcon.icns
+python3 scripts/gen-icons.py   # Pillow; plus GI Rsvg/pycairo for the app icon
+scripts/make-macos-icns.sh     # macOS only; writes build/AppIcon.icns
 ```
 
 Repository layout:
